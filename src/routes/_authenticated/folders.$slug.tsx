@@ -2,6 +2,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+  ClipboardPaste,
   Download,
   FileText,
   FolderClosed,
@@ -10,6 +11,7 @@ import {
   Lock,
   Trash2,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,8 +56,11 @@ import {
   useMockSubfolders,
 } from "@/lib/mock-subfolders";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
+import { FileRowMenu } from "@/components/portal/file-row-menu";
+import { clearClipboard, setClipboard, useClipboard } from "@/lib/clipboard";
 import {
   canWrite,
+  copyFileToFolder,
   deleteFile,
   downloadFile,
   fetchFiles,
@@ -63,9 +68,11 @@ import {
   fetchProfile,
   formatBytes,
   formatDate,
+  moveFileToFolder,
   uploadFile,
   type PortalFile,
 } from "@/lib/portal";
+
 
 
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
