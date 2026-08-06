@@ -337,7 +337,13 @@ function FolderBrowser() {
         </div>
       </div>
 
-      {clipboard && (
+      {clipboard && (() => {
+        const destinationName = trail.at(-1)?.name ?? folderName;
+        const alreadyHere =
+          clipboard.action === "cut" &&
+          clipboard.sourceFolderId === folder.id &&
+          placementOf(placements, clipboard.file.id) === currentId;
+        return (
         <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
           <p className="text-sm text-muted-foreground">
             <span className="font-medium text-foreground">
@@ -345,16 +351,9 @@ function FolderBrowser() {
             </span>{" "}
             ready to {clipboard.action === "cut" ? "move" : "copy"} from{" "}
             {clipboard.sourceFolderName}
-            {currentId !== null && (
-              <span className="ml-1 text-xs">
-                — files live at the top level of {folderName}, so it will be
-                placed there.
-              </span>
+            {alreadyHere && (
+              <span className="ml-1 text-xs">— already in this folder.</span>
             )}
-            {clipboard.action === "cut" &&
-              clipboard.sourceFolderId === folder.id && (
-                <span className="ml-1 text-xs">— already in this folder.</span>
-              )}
             {!writable && (
               <span className="ml-1 text-xs">
                 — you don't have upload rights here.
@@ -368,17 +367,8 @@ function FolderBrowser() {
             </Button>
             <Button
               size="sm"
-              disabled={
-                !writable ||
-                paste.isPending ||
-                (clipboard.action === "cut" &&
-                  clipboard.sourceFolderId === folder.id)
-              }
-              onClick={() => {
-                // Real files always live at the folder root, so surface them there.
-                setCurrentId(null);
-                paste.mutate();
-              }}
+              disabled={!writable || paste.isPending || alreadyHere}
+              onClick={() => paste.mutate()}
             >
               {paste.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -386,12 +376,14 @@ function FolderBrowser() {
                 <ClipboardPaste className="mr-2 h-4 w-4" />
               )}
               {clipboard.action === "cut"
-                ? `Move to ${folderName}`
-                : `Paste into ${folderName}`}
+                ? `Move to ${destinationName}`
+                : `Paste into ${destinationName}`}
             </Button>
           </div>
         </div>
-      )}
+        );
+      })()}
+
 
 
 
