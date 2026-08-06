@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, PencilLine } from "lucide-react";
+import { MoreHorizontal, PencilLine, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -17,16 +17,28 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 interface FolderCardMenuProps {
   name: string;
   onRename: (name: string) => void;
+  /** When provided, a Delete option is shown. */
+  onDelete?: () => void | Promise<void>;
+  deleteDescription?: string;
+  deleting?: boolean;
 }
 
-export function FolderCardMenu({ name, onRename }: FolderCardMenuProps) {
+export function FolderCardMenu({
+  name,
+  onRename,
+  onDelete,
+  deleteDescription,
+  deleting,
+}: FolderCardMenuProps) {
   const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [value, setValue] = useState(name);
 
   function stop(e: React.SyntheticEvent) {
@@ -69,6 +81,21 @@ export function FolderCardMenu({ name, onRename }: FolderCardMenuProps) {
             <PencilLine className="mr-2 h-4 w-4" />
             Rename
           </DropdownMenuItem>
+          {onDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={(e) => {
+                  e.preventDefault();
+                  setConfirmOpen(true);
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -97,6 +124,33 @@ export function FolderCardMenu({ name, onRename }: FolderCardMenuProps) {
               Cancel
             </Button>
             <Button onClick={save}>Save Changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete folder</DialogTitle>
+            <DialogDescription>
+              {deleteDescription ??
+                `"${name}" and everything inside it will be permanently removed. This cannot be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                await onDelete?.();
+                setConfirmOpen(false);
+              }}
+            >
+              Delete folder
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

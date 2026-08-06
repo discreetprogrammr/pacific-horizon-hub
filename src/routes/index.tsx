@@ -11,18 +11,19 @@ import { Label } from "@/components/ui/label";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Sign in | Pacific Horizon Care Portal" },
+      { title: "Sign in | Pacific Horizon Tek Portal" },
       {
         name: "description",
         content:
-          "Secure sign-in for the Pacific Horizon Care internal company resource portal. Authorised staff only.",
+          "Secure sign-in for the Pacific Horizon Tek internal company resource portal. Authorised staff only.",
       },
-      { property: "og:title", content: "Sign in | Pacific Horizon Care Portal" },
+      { property: "og:title", content: "Sign in | Pacific Horizon Tek Portal" },
       {
         property: "og:description",
         content:
-          "Secure sign-in for the Pacific Horizon Care internal company resource portal.",
+          "Secure sign-in for the Pacific Horizon Tek internal company resource portal.",
       },
+
     ],
   }),
   component: LoginPage,

@@ -1,10 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderClosed, Lock, ShieldCheck, Upload } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { canWrite, fetchFolderCounts, fetchFolders, fetchProfile } from "@/lib/portal";
+import {
+  canWrite,
+  deleteFolder,
+  fetchFolderCounts,
+  fetchFolders,
+  fetchProfile,
+  type Folder,
+} from "@/lib/portal";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
 import {
   canRenameFolder,
@@ -15,16 +23,16 @@ import {
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
     meta: [
-      { title: "Dashboard | Pacific Horizon Care Portal" },
+      { title: "Dashboard | Pacific Horizon Tek Portal" },
       {
         name: "description",
         content:
-          "Secure internal dashboard for Pacific Horizon Care staff to access department document folders.",
+          "Secure internal dashboard for Pacific Horizon Tek staff to access department document folders.",
       },
-      { property: "og:title", content: "Dashboard | Pacific Horizon Care Portal" },
+      { property: "og:title", content: "Dashboard | Pacific Horizon Tek Portal" },
       {
         property: "og:description",
-        content: "Secure internal document dashboard for Pacific Horizon Care staff.",
+        content: "Secure internal document dashboard for Pacific Horizon Tek staff.",
       },
     ],
   }),
@@ -32,6 +40,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
+  const queryClient = useQueryClient();
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: folders, isLoading } = useQuery({
     queryKey: ["folders"],
@@ -43,6 +52,20 @@ function Dashboard() {
     queryFn: () => fetchFolderCounts((folders ?? []).map((f) => f.id)),
     enabled: !!folders?.length,
   });
+
+  const isAdmin = profile?.role === "super_admin";
+
+  const removeFolder = useMutation({
+    mutationFn: (folder: Folder) => deleteFolder(folder),
+    onSuccess: () => {
+      toast.success("Folder deleted");
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+      queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not delete this folder"),
+  });
+
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
@@ -108,8 +131,16 @@ function Dashboard() {
                         <FolderCardMenu
                           name={displayName}
                           onRename={(next) => renameRootFolder(folder.slug, next)}
+                          {...(isAdmin
+                            ? {
+                                onDelete: () => removeFolder.mutateAsync(folder),
+                                deleting: removeFolder.isPending,
+                                deleteDescription: `"${displayName}" and all ${counts?.[folder.id] ?? 0} file(s) stored inside it will be permanently deleted. This cannot be undone.`,
+                              }
+                            : {})}
                         />
                       )}
+
                     </div>
                   </div>
                   <h3 className="mt-4 font-semibold tracking-tight">{displayName}</h3>

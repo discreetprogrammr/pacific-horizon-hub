@@ -75,6 +75,24 @@ export function renameMockSubfolder(
   emit();
 }
 
+/** Remove a sub-folder and every descendant beneath it. */
+export function deleteMockSubfolder(folderSlug: string, id: string) {
+  const all = store[folderSlug] ?? [];
+  const doomed = new Set<string>([id]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const f of all) {
+      if (f.parentId && doomed.has(f.parentId) && !doomed.has(f.id)) {
+        doomed.add(f.id);
+        changed = true;
+      }
+    }
+  }
+  store[folderSlug] = all.filter((f) => !doomed.has(f.id));
+  emit();
+}
+
 /** Simulated RBAC: super admins can rename anything, owners can rename their own. */
 export function canRenameFolder(
   profile: { email?: string | null; role?: string | null } | null,
@@ -84,6 +102,7 @@ export function canRenameFolder(
   if (profile.role === "super_admin") return true;
   return !!ownerEmail && ownerEmail === profile.email;
 }
+
 
 export function childrenOf(all: MockSubfolder[], parentId: string | null) {
   return all.filter((f) => f.parentId === parentId);
