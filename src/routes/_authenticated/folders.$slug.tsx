@@ -113,7 +113,11 @@ function FolderBrowser() {
     enabled: !!folder?.id,
   });
 
+  // Mock sub-folders have no files yet — real files live at the folder root.
+  const visibleFiles: PortalFile[] = currentId === null ? (files ?? []) : [];
+
   const writable = canWrite(profile ?? null, folder ?? null);
+
   const isAdmin = profile?.role === "super_admin";
 
   const upload = useMutation({
