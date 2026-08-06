@@ -78,18 +78,19 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Pacific Horizon Care | Internal Resource Portal" },
+      { title: "Pacific Horizon Tek | Internal Resource Portal" },
       {
         name: "description",
         content:
-          "Secure internal resource portal for Pacific Horizon Care staff — department document folders with role-based access.",
+          "Secure internal resource portal for Pacific Horizon Tek staff — department document folders with role-based access.",
       },
       { name: "robots", content: "noindex, nofollow" },
-      { property: "og:title", content: "Pacific Horizon Care | Internal Resource Portal" },
+      { property: "og:title", content: "Pacific Horizon Tek | Internal Resource Portal" },
       {
         property: "og:description",
-        content: "Secure internal document portal for Pacific Horizon Care staff.",
+        content: "Secure internal document portal for Pacific Horizon Tek staff.",
       },
+
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],

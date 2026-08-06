@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -49,6 +49,7 @@ import {
   addMockSubfolder,
   canRenameFolder,
   childrenOf,
+  deleteMockSubfolder,
   pathOf,
   renameMockSubfolder,
   renameRootFolder,
@@ -57,11 +58,13 @@ import {
 } from "@/lib/mock-subfolders";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
 import { FileRowMenu } from "@/components/portal/file-row-menu";
+import { FilePreviewDialog } from "@/components/portal/file-preview-dialog";
 import { clearClipboard, setClipboard, useClipboard } from "@/lib/clipboard";
 import {
   canWrite,
   copyFileToFolder,
   deleteFile,
+  deleteFolder,
   downloadFile,
   fetchFiles,
   fetchFolderBySlug,
@@ -78,24 +81,26 @@ import {
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
   head: () => ({
     meta: [
-      { title: "Files | Pacific Horizon Care Portal" },
+      { title: "Files | Pacific Horizon Tek Portal" },
       {
         name: "description",
         content:
-          "Browse, upload and download department documents in the Pacific Horizon Care secure portal.",
+          "Browse, upload and download department documents in the Pacific Horizon Tek secure portal.",
       },
-      { property: "og:title", content: "Files | Pacific Horizon Care Portal" },
+      { property: "og:title", content: "Files | Pacific Horizon Tek Portal" },
       {
         property: "og:description",
-        content: "Secure department file browser for Pacific Horizon Care staff.",
+        content: "Secure department file browser for Pacific Horizon Tek staff.",
       },
     ],
   }),
   component: FolderBrowser,
 });
 
+
 function FolderBrowser() {
   const { slug } = useParams({ from: "/_authenticated/folders/$slug" });
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -103,6 +108,8 @@ function FolderBrowser() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
+  const [previewFile, setPreviewFile] = useState<PortalFile | null>(null);
+
 
   const subfolders = useMockSubfolders(slug);
   const rootNames = useMockRootNames();
@@ -163,25 +170,49 @@ function FolderBrowser() {
 
   const paste = useMutation({
     mutationFn: async () => {
-      if (!clipboard || !folder || !profile) return;
+      if (!clipboard) throw new Error("Nothing on the clipboard");
+      if (!folder) throw new Error("Destination folder unavailable");
+      if (!profile) throw new Error("Your session has expired — sign in again");
       if (clipboard.action === "copy") {
         await copyFileToFolder(clipboard.file, folder, profile.id);
       } else {
         await moveFileToFolder(clipboard.file, folder);
       }
+      return {
+        action: clipboard.action,
+        sourceFolderId: clipboard.sourceFolderId,
+      };
     },
-    onSuccess: () => {
-      const wasCut = clipboard?.action === "cut";
-      const sourceId = clipboard?.sourceFolderId;
+    onSuccess: (result) => {
       clearClipboard();
-      toast.success(wasCut ? "File moved" : "File copied");
-      queryClient.invalidateQueries({ queryKey: ["files", folder?.id] });
-      if (sourceId) queryClient.invalidateQueries({ queryKey: ["files", sourceId] });
+      toast.success(result?.action === "cut" ? "File moved" : "File copied");
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+      if (result?.sourceFolderId) {
+        queryClient.invalidateQueries({
+          queryKey: ["files", result.sourceFolderId],
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
     onError: (error: Error) =>
       toast.error(error.message || "Could not complete that action"),
   });
+
+  const removeFolder = useMutation({
+    mutationFn: async () => {
+      if (!folder) throw new Error("Folder unavailable");
+      await deleteFolder(folder);
+    },
+    onSuccess: () => {
+      toast.success("Folder deleted");
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+      queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
+      navigate({ to: "/dashboard", replace: true });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not delete this folder"),
+  });
+
 
 
   async function handleDownload(file: PortalFile) {
@@ -285,6 +316,13 @@ function FolderBrowser() {
             <FolderCardMenu
               name={folderName}
               onRename={(next) => renameRootFolder(folder.slug, next)}
+              {...(isAdmin
+                ? {
+                    onDelete: () => removeFolder.mutateAsync(),
+                    deleting: removeFolder.isPending,
+                    deleteDescription: `"${folderName}" and all files stored inside it will be permanently deleted. This cannot be undone.`,
+                  }
+                : {})}
             />
           )}
         </div>
@@ -298,6 +336,21 @@ function FolderBrowser() {
             </span>{" "}
             ready to {clipboard.action === "cut" ? "move" : "copy"} from{" "}
             {clipboard.sourceFolderName}
+            {currentId !== null && (
+              <span className="ml-1 text-xs">
+                — go back to {folderName} to paste.
+              </span>
+            )}
+            {currentId === null &&
+              clipboard.action === "cut" &&
+              clipboard.sourceFolderId === folder.id && (
+                <span className="ml-1 text-xs">— already in this folder.</span>
+              )}
+            {currentId === null && !writable && (
+              <span className="ml-1 text-xs">
+                — you don't have upload rights here.
+              </span>
+            )}
           </p>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => clearClipboard()}>
@@ -325,6 +378,7 @@ function FolderBrowser() {
           </div>
         </div>
       )}
+
 
 
 
@@ -411,8 +465,15 @@ function FolderBrowser() {
                   <FolderCardMenu
                     name={sub.name}
                     onRename={(next) => renameMockSubfolder(slug, sub.id, next)}
+                    onDelete={() => {
+                      deleteMockSubfolder(slug, sub.id);
+                      if (currentId === sub.id) setCurrentId(sub.parentId);
+                      toast.success(`Folder "${sub.name}" deleted`);
+                    }}
+                    deleteDescription={`"${sub.name}" and all sub-folders inside it will be removed.`}
                   />
                 )}
+
               </div>
               <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
               <p className="text-xs text-muted-foreground">
@@ -493,8 +554,11 @@ function FolderBrowser() {
               return (
               <TableRow
                 key={file.id}
-                className={clipped ? "bg-accent/40" : undefined}
+                title="Double-click to preview"
+                onDoubleClick={() => setPreviewFile(file)}
+                className={`cursor-pointer ${clipped ? "bg-accent/40" : ""}`}
               >
+
                 <TableCell className="font-medium">
                   <span className="flex items-center gap-2">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -542,22 +606,25 @@ function FolderBrowser() {
                     )}
                     <FileRowMenu
                       canCut={writable}
-                      onCut={() =>
+                      onPreview={() => setPreviewFile(file)}
+                      onCut={() => {
                         setClipboard({
                           action: "cut",
                           file,
                           sourceFolderId: folder.id,
                           sourceFolderName: folderName,
-                        })
-                      }
-                      onCopy={() =>
+                        });
+                        toast.success(`"${file.name}" cut — open a folder to move it`);
+                      }}
+                      onCopy={() => {
                         setClipboard({
                           action: "copy",
                           file,
                           sourceFolderId: folder.id,
                           sourceFolderName: folderName,
-                        })
-                      }
+                        });
+                        toast.success(`"${file.name}" copied — open a folder to paste`);
+                      }}
                     />
                   </div>
                 </TableCell>
@@ -568,6 +635,13 @@ function FolderBrowser() {
           </TableBody>
         </Table>
       </div>
+
+      <FilePreviewDialog
+        file={previewFile}
+        onOpenChange={(open) => !open && setPreviewFile(null)}
+        onDownload={handleDownload}
+      />
     </div>
   );
 }
+

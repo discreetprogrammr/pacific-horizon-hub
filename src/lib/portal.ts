@@ -161,11 +161,42 @@ export async function downloadFile(file: PortalFile) {
   window.open(data.signedUrl, "_blank", "noopener");
 }
 
+/** Short-lived signed URL used to render a file inline in the preview modal. */
+export async function createPreviewUrl(file: PortalFile): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(file.storage_path, 300);
+  if (error || !data) throw error ?? new Error("Could not create preview link");
+  return data.signedUrl;
+}
+
 export async function deleteFile(file: PortalFile) {
   const { error } = await supabase.from("files").delete().eq("id", file.id);
   if (error) throw error;
   await supabase.storage.from(BUCKET).remove([file.storage_path]);
 }
+
+/**
+ * Delete a department folder: removes its stored objects, then the folder row.
+ * File metadata rows cascade away with the folder. RLS limits this to super admins.
+ */
+export async function deleteFolder(folder: Folder) {
+  const { data: rows, error: listError } = await supabase
+    .from("files")
+    .select("storage_path")
+    .eq("folder_id", folder.id);
+  if (listError) throw listError;
+
+  const { error: deleteError } = await supabase
+    .from("folders")
+    .delete()
+    .eq("id", folder.id);
+  if (deleteError) throw deleteError;
+
+  const paths = (rows ?? []).map((r) => r.storage_path);
+  if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
+}
+
 
 function targetPath(folder: Folder, fileName: string) {
   const safeName = fileName.replace(/[^\w.\-() ]+/g, "_");
