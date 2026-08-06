@@ -118,3 +118,30 @@ export function pathOf(all: MockSubfolder[], id: string | null): MockSubfolder[]
   }
   return trail;
 }
+
+/**
+ * Mock placement of real files inside mock sub-folders.
+ * Maps a file id to the sub-folder id it currently lives in (null = folder root).
+ */
+const placements: Record<string, string | null> = {};
+
+export function useFilePlacements(): Record<string, string | null> {
+  return useSyncExternalStore(
+    subscribe,
+    () => placements,
+    () => placements,
+  );
+}
+
+export function setFilePlacement(fileId: string, subfolderId: string | null) {
+  if (subfolderId === null) delete placements[fileId];
+  else placements[fileId] = subfolderId;
+  emit();
+}
+
+export function placementOf(
+  map: Record<string, string | null>,
+  fileId: string,
+): string | null {
+  return map[fileId] ?? null;
+}
