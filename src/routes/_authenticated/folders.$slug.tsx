@@ -1,11 +1,30 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
-import { Download, FileText, Loader2, Lock, Trash2, UploadCloud } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Download,
+  FileText,
+  FolderClosed,
+  FolderPlus,
+  Loader2,
+  Lock,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -25,6 +44,12 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
+  addMockSubfolder,
+  childrenOf,
+  pathOf,
+  useMockSubfolders,
+} from "@/lib/mock-subfolders";
+import {
   canWrite,
   deleteFile,
   downloadFile,
@@ -36,6 +61,7 @@ import {
   uploadFile,
   type PortalFile,
 } from "@/lib/portal";
+
 
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
   head: () => ({
@@ -62,6 +88,19 @@ function FolderBrowser() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const subfolders = useMockSubfolders(slug);
+  const trail = pathOf(subfolders, currentId);
+  const visibleSubfolders = childrenOf(subfolders, currentId);
+
+
+  useEffect(() => {
+    setCurrentId(null);
+  }, [slug]);
+
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: folder, isLoading: folderLoading } = useQuery({
@@ -74,7 +113,11 @@ function FolderBrowser() {
     enabled: !!folder?.id,
   });
 
+  // Mock sub-folders have no files yet — real files live at the folder root.
+  const visibleFiles: PortalFile[] = currentId === null ? (files ?? []) : [];
+
   const writable = canWrite(profile ?? null, folder ?? null);
+
   const isAdmin = profile?.role === "super_admin";
 
   const upload = useMutation({
@@ -111,7 +154,20 @@ function FolderBrowser() {
     }
   }
 
+  function handleCreateFolder() {
+    const name = newName.trim();
+    if (!name) {
+      toast.error("Enter a folder name");
+      return;
+    }
+    addMockSubfolder(slug, name, currentId);
+    setNewName("");
+    setDialogOpen(false);
+    toast.success(`Folder "${name}" created`);
+  }
+
   if (folderLoading) {
+
     return <Skeleton className="mx-auto h-64 w-full max-w-6xl rounded-2xl" />;
   }
 
@@ -141,20 +197,50 @@ function FolderBrowser() {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage>{folder.name}</BreadcrumbPage>
+            {trail.length === 0 ? (
+              <BreadcrumbPage>{folder.name}</BreadcrumbPage>
+            ) : (
+              <BreadcrumbLink asChild>
+                <button type="button" onClick={() => setCurrentId(null)}>
+                  {folder.name}
+                </button>
+              </BreadcrumbLink>
+            )}
           </BreadcrumbItem>
+          {trail.map((crumb, i) => (
+            <span key={crumb.id} className="flex items-center gap-1.5">
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                {i === trail.length - 1 ? (
+                  <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild>
+                    <button type="button" onClick={() => setCurrentId(crumb.id)}>
+                      {crumb.name}
+                    </button>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </span>
+          ))}
         </BreadcrumbList>
       </Breadcrumb>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{folder.name}</h1>
-          <p className="text-sm text-muted-foreground">{folder.description}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {trail.at(-1)?.name ?? folder.name}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {trail.length ? `Inside ${folder.name}` : folder.description}
+          </p>
+
         </div>
         <Badge variant={writable ? "default" : "secondary"}>
           {writable ? "Read & Upload" : "Read only"}
         </Badge>
       </div>
+
 
       {writable ? (
         <div
@@ -189,18 +275,23 @@ function FolderBrowser() {
               e.target.value = "";
             }}
           />
-          <Button
-            className="mt-4"
-            onClick={() => inputRef.current?.click()}
-            disabled={upload.isPending}
-          >
-            {upload.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <UploadCloud className="mr-2 h-4 w-4" />
-            )}
-            Upload file
-          </Button>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button
+              onClick={() => inputRef.current?.click()}
+              disabled={upload.isPending}
+            >
+              {upload.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <UploadCloud className="mr-2 h-4 w-4" />
+              )}
+              Upload file
+            </Button>
+            <Button variant="outline" onClick={() => setDialogOpen(true)}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              New Folder
+            </Button>
+          </div>
           {progress !== null && (
             <Progress value={progress} className="mx-auto mt-4 h-2 max-w-sm" />
           )}
@@ -211,6 +302,63 @@ function FolderBrowser() {
           You have read-only access to this folder.
         </div>
       )}
+
+      {visibleSubfolders.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleSubfolders.map((sub) => (
+            <button
+              key={sub.id}
+              type="button"
+              onClick={() => setCurrentId(sub.id)}
+              className="glass-card flex flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
+            >
+              <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
+                <FolderClosed className="h-5 w-5" />
+              </span>
+              <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
+              <p className="text-xs text-muted-foreground">
+                {childrenOf(subfolders, sub.id).length} sub-folders
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create new folder</DialogTitle>
+            <DialogDescription>
+              The folder will be added inside{" "}
+              <span className="font-medium">
+                {trail.at(-1)?.name ?? folder.name}
+              </span>
+              .
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="folder-name">Folder Name</Label>
+            <Input
+              id="folder-name"
+              value={newName}
+              autoFocus
+              placeholder="e.g. 2026 Presentations"
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleCreateFolder();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFolder}>Create Folder</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
 
       <div className="glass-card overflow-hidden rounded-2xl">
         <Table>
@@ -231,7 +379,7 @@ function FolderBrowser() {
                 </TableCell>
               </TableRow>
             )}
-            {!filesLoading && (files ?? []).length === 0 && (
+            {!filesLoading && visibleFiles.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={5}
@@ -241,7 +389,7 @@ function FolderBrowser() {
                 </TableCell>
               </TableRow>
             )}
-            {(files ?? []).map((file) => (
+            {visibleFiles.map((file) => (
               <TableRow key={file.id}>
                 <TableCell className="font-medium">
                   <span className="flex items-center gap-2">
