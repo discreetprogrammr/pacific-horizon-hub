@@ -192,20 +192,49 @@ function FolderBrowser() {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage>{folder.name}</BreadcrumbPage>
+            {trail.length === 0 ? (
+              <BreadcrumbPage>{folder.name}</BreadcrumbPage>
+            ) : (
+              <BreadcrumbLink asChild>
+                <button type="button" onClick={() => setCurrentId(null)}>
+                  {folder.name}
+                </button>
+              </BreadcrumbLink>
+            )}
           </BreadcrumbItem>
+          {trail.map((crumb, i) => (
+            <span key={crumb.id} className="flex items-center gap-1.5">
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                {i === trail.length - 1 ? (
+                  <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                ) : (
+                  <BreadcrumbLink asChild>
+                    <button type="button" onClick={() => setCurrentId(crumb.id)}>
+                      {crumb.name}
+                    </button>
+                  </BreadcrumbLink>
+                )}
+              </BreadcrumbItem>
+            </span>
+          ))}
         </BreadcrumbList>
       </Breadcrumb>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{folder.name}</h1>
-          <p className="text-sm text-muted-foreground">{folder.description}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {trail.length ? trail[trail.length - 1].name : folder.name}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {trail.length ? `Inside ${folder.name}` : folder.description}
+          </p>
         </div>
         <Badge variant={writable ? "default" : "secondary"}>
           {writable ? "Read & Upload" : "Read only"}
         </Badge>
       </div>
+
 
       {writable ? (
         <div
