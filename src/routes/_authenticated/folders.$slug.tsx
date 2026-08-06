@@ -450,12 +450,26 @@ function FolderBrowser() {
                 </TableCell>
               </TableRow>
             )}
-            {visibleFiles.map((file) => (
-              <TableRow key={file.id}>
+            {visibleFiles.map((file) => {
+              const clipped = clipboard?.file.id === file.id;
+              return (
+              <TableRow
+                key={file.id}
+                className={clipped ? "bg-accent/40" : undefined}
+              >
                 <TableCell className="font-medium">
                   <span className="flex items-center gap-2">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{file.name}</span>
+                    <span
+                      className={`truncate ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
+                    >
+                      {file.name}
+                    </span>
+                    {clipped && (
+                      <Badge variant="secondary" className="shrink-0 capitalize">
+                        {clipboard?.action}
+                      </Badge>
+                    )}
                   </span>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-muted-foreground">
@@ -488,10 +502,31 @@ function FolderBrowser() {
                         <span className="sr-only">Delete</span>
                       </Button>
                     )}
+                    <FileRowMenu
+                      canCut={writable}
+                      onCut={() =>
+                        setClipboard({
+                          action: "cut",
+                          file,
+                          sourceFolderId: folder.id,
+                          sourceFolderName: folderName,
+                        })
+                      }
+                      onCopy={() =>
+                        setClipboard({
+                          action: "copy",
+                          file,
+                          sourceFolderId: folder.id,
+                          sourceFolderName: folderName,
+                        })
+                      }
+                    />
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
+
           </TableBody>
         </Table>
       </div>
