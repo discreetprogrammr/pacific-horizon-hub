@@ -31,15 +31,23 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
         <div className="flex items-center gap-2">
-          <img
-            src={logo.url}
-            alt="Pacific Horizon Tek Inc."
-            className="h-8 w-8 shrink-0 object-contain object-left"
-            style={{ objectPosition: "left center" }}
-          />
-          {!collapsed && (
+          {collapsed ? (
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/10">
+              <img
+                src={logo.url}
+                alt="Pacific Horizon Tek Inc."
+                className="h-8 w-auto max-w-none"
+                style={{ objectFit: "cover", objectPosition: "left center", width: "auto" }}
+              />
+            </span>
+          ) : (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tracking-tight">
+              <img
+                src={logo.url}
+                alt="Pacific Horizon Tek Inc."
+                className="h-10 w-auto object-contain"
+              />
+              <p className="mt-2 truncate text-sm font-semibold tracking-tight">
                 Pacific Horizon Care
               </p>
               <p className="truncate text-[11px] text-sidebar-foreground/60">
