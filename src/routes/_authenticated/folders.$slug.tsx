@@ -270,18 +270,23 @@ function FolderBrowser() {
               e.target.value = "";
             }}
           />
-          <Button
-            className="mt-4"
-            onClick={() => inputRef.current?.click()}
-            disabled={upload.isPending}
-          >
-            {upload.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <UploadCloud className="mr-2 h-4 w-4" />
-            )}
-            Upload file
-          </Button>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <Button
+              onClick={() => inputRef.current?.click()}
+              disabled={upload.isPending}
+            >
+              {upload.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <UploadCloud className="mr-2 h-4 w-4" />
+              )}
+              Upload file
+            </Button>
+            <Button variant="outline" onClick={() => setDialogOpen(true)}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              New Folder
+            </Button>
+          </div>
           {progress !== null && (
             <Progress value={progress} className="mx-auto mt-4 h-2 max-w-sm" />
           )}
@@ -292,6 +297,63 @@ function FolderBrowser() {
           You have read-only access to this folder.
         </div>
       )}
+
+      {visibleSubfolders.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleSubfolders.map((sub) => (
+            <button
+              key={sub.id}
+              type="button"
+              onClick={() => setCurrentId(sub.id)}
+              className="glass-card flex flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
+            >
+              <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
+                <FolderClosed className="h-5 w-5" />
+              </span>
+              <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
+              <p className="text-xs text-muted-foreground">
+                {childrenOf(subfolders, sub.id).length} sub-folders
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create new folder</DialogTitle>
+            <DialogDescription>
+              The folder will be added inside{" "}
+              <span className="font-medium">
+                {trail.at(-1)?.name ?? folder.name}
+              </span>
+              .
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="folder-name">Folder Name</Label>
+            <Input
+              id="folder-name"
+              value={newName}
+              autoFocus
+              placeholder="e.g. 2026 Presentations"
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleCreateFolder();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFolder}>Create Folder</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
 
       <div className="glass-card overflow-hidden rounded-2xl">
         <Table>
