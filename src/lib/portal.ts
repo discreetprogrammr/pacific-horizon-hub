@@ -167,6 +167,58 @@ export async function deleteFile(file: PortalFile) {
   await supabase.storage.from(BUCKET).remove([file.storage_path]);
 }
 
+function targetPath(folder: Folder, fileName: string) {
+  const safeName = fileName.replace(/[^\w.\-() ]+/g, "_");
+  return `${folder.slug}/${crypto.randomUUID()}-${safeName}`;
+}
+
+/** Duplicate a file's storage object and metadata row into another folder. */
+export async function copyFileToFolder(
+  file: PortalFile,
+  target: Folder,
+  userId: string,
+) {
+  const path = targetPath(target, file.name);
+  const { error: copyError } = await supabase.storage
+    .from(BUCKET)
+    .copy(file.storage_path, path);
+  if (copyError) throw copyError;
+
+  const { error: insertError } = await supabase.from("files").insert({
+    folder_id: target.id,
+    name: file.name,
+    size: file.size,
+    mime_type: file.mime_type,
+    storage_path: path,
+    uploaded_by: userId,
+  });
+  if (insertError) {
+    await supabase.storage.from(BUCKET).remove([path]);
+    throw insertError;
+  }
+}
+
+/** Move a file's storage object and update its folder reference. */
+export async function moveFileToFolder(file: PortalFile, target: Folder) {
+  if (file.folder_id === target.id) return;
+  const path = targetPath(target, file.name);
+  const { error: moveError } = await supabase.storage
+    .from(BUCKET)
+    .move(file.storage_path, path);
+  if (moveError) throw moveError;
+
+  const { error: updateError } = await supabase
+    .from("files")
+    .update({ folder_id: target.id, storage_path: path })
+    .eq("id", file.id);
+  if (updateError) {
+    // roll the object back so metadata and storage stay in sync
+    await supabase.storage.from(BUCKET).move(path, file.storage_path);
+    throw updateError;
+  }
+}
+
+
 export function formatBytes(bytes: number) {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
