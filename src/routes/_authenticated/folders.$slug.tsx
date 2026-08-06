@@ -1,11 +1,30 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
-import { Download, FileText, Loader2, Lock, Trash2, UploadCloud } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Download,
+  FileText,
+  FolderClosed,
+  FolderPlus,
+  Loader2,
+  Lock,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -25,6 +44,12 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
+  addMockSubfolder,
+  childrenOf,
+  pathOf,
+  useMockSubfolders,
+} from "@/lib/mock-subfolders";
+import {
   canWrite,
   deleteFile,
   downloadFile,
@@ -36,6 +61,7 @@ import {
   uploadFile,
   type PortalFile,
 } from "@/lib/portal";
+
 
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
   head: () => ({
