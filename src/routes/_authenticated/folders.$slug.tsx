@@ -374,7 +374,7 @@ function FolderBrowser() {
                 </TableCell>
               </TableRow>
             )}
-            {!filesLoading && (files ?? []).length === 0 && (
+            {!filesLoading && visibleFiles.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={5}
@@ -384,7 +384,7 @@ function FolderBrowser() {
                 </TableCell>
               </TableRow>
             )}
-            {(files ?? []).map((file) => (
+            {visibleFiles.map((file) => (
               <TableRow key={file.id}>
                 <TableCell className="font-medium">
                   <span className="flex items-center gap-2">
