@@ -290,6 +290,44 @@ function FolderBrowser() {
         </div>
       </div>
 
+      {clipboard && (
+        <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {clipboard.file.name}
+            </span>{" "}
+            ready to {clipboard.action === "cut" ? "move" : "copy"} from{" "}
+            {clipboard.sourceFolderName}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => clearClipboard()}>
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                !writable ||
+                currentId !== null ||
+                paste.isPending ||
+                (clipboard.action === "cut" &&
+                  clipboard.sourceFolderId === folder.id)
+              }
+              onClick={() => paste.mutate()}
+            >
+              {paste.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ClipboardPaste className="mr-2 h-4 w-4" />
+              )}
+              {clipboard.action === "cut" ? "Move here" : "Paste here"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+
+
 
       {writable ? (
         <div
