@@ -39,11 +39,11 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
       <SidebarTrigger />
 
       <div className="flex min-w-0 items-center gap-2">
-        <span className="flex h-9 items-center rounded-lg bg-sidebar px-2">
+        <span className="flex h-12 items-center rounded-lg bg-sidebar px-3">
           <img
             src={logo.url}
             alt="Pacific Horizon Tek Inc."
-            className="h-6 w-auto object-contain"
+            className="h-10 w-auto object-contain"
           />
         </span>
         <span className="hidden truncate text-sm font-semibold tracking-tight md:inline">

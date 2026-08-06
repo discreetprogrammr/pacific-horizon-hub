@@ -215,18 +215,23 @@ export async function copyFileToFolder(
     .copy(file.storage_path, path);
   if (copyError) throw copyError;
 
-  const { error: insertError } = await supabase.from("files").insert({
-    folder_id: target.id,
-    name: file.name,
-    size: file.size,
-    mime_type: file.mime_type,
-    storage_path: path,
-    uploaded_by: userId,
-  });
+  const { data: inserted, error: insertError } = await supabase
+    .from("files")
+    .insert({
+      folder_id: target.id,
+      name: file.name,
+      size: file.size,
+      mime_type: file.mime_type,
+      storage_path: path,
+      uploaded_by: userId,
+    })
+    .select("id")
+    .single();
   if (insertError) {
     await supabase.storage.from(BUCKET).remove([path]);
     throw insertError;
   }
+  return inserted?.id as string | undefined;
 }
 
 /** Move a file's storage object and update its folder reference. */
