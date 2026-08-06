@@ -45,10 +45,15 @@ import {
 } from "@/components/ui/breadcrumb";
 import {
   addMockSubfolder,
+  canRenameFolder,
   childrenOf,
   pathOf,
+  renameMockSubfolder,
+  renameRootFolder,
+  useMockRootNames,
   useMockSubfolders,
 } from "@/lib/mock-subfolders";
+import { FolderCardMenu } from "@/components/portal/folder-card-menu";
 import {
   canWrite,
   deleteFile,
@@ -93,6 +98,7 @@ function FolderBrowser() {
   const [newName, setNewName] = useState("");
 
   const subfolders = useMockSubfolders(slug);
+  const rootNames = useMockRootNames();
   const trail = pathOf(subfolders, currentId);
   const visibleSubfolders = childrenOf(subfolders, currentId);
 
@@ -160,7 +166,7 @@ function FolderBrowser() {
       toast.error("Enter a folder name");
       return;
     }
-    addMockSubfolder(slug, name, currentId);
+    addMockSubfolder(slug, name, currentId, profile?.email ?? null);
     setNewName("");
     setDialogOpen(false);
     toast.success(`Folder "${name}" created`);
@@ -186,6 +192,9 @@ function FolderBrowser() {
     );
   }
 
+  const folderName = rootNames[folder.slug] ?? folder.name;
+  const canRenameRoot = canRenameFolder(profile ?? null, null);
+
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <Breadcrumb>
@@ -198,11 +207,11 @@ function FolderBrowser() {
           <BreadcrumbSeparator />
           <BreadcrumbItem>
             {trail.length === 0 ? (
-              <BreadcrumbPage>{folder.name}</BreadcrumbPage>
+              <BreadcrumbPage>{folderName}</BreadcrumbPage>
             ) : (
               <BreadcrumbLink asChild>
                 <button type="button" onClick={() => setCurrentId(null)}>
-                  {folder.name}
+                  {folderName}
                 </button>
               </BreadcrumbLink>
             )}
@@ -229,16 +238,24 @@ function FolderBrowser() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {trail.at(-1)?.name ?? folder.name}
+            {trail.at(-1)?.name ?? folderName}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {trail.length ? `Inside ${folder.name}` : folder.description}
+            {trail.length ? `Inside ${folderName}` : folder.description}
           </p>
 
         </div>
-        <Badge variant={writable ? "default" : "secondary"}>
-          {writable ? "Read & Upload" : "Read only"}
-        </Badge>
+        <div className="flex items-center gap-1">
+          <Badge variant={writable ? "default" : "secondary"}>
+            {writable ? "Read & Upload" : "Read only"}
+          </Badge>
+          {trail.length === 0 && canRenameRoot && (
+            <FolderCardMenu
+              name={folderName}
+              onRename={(next) => renameRootFolder(folder.slug, next)}
+            />
+          )}
+        </div>
       </div>
 
 
@@ -306,20 +323,32 @@ function FolderBrowser() {
       {visibleSubfolders.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {visibleSubfolders.map((sub) => (
-            <button
+            <div
               key={sub.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => setCurrentId(sub.id)}
-              className="glass-card flex flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") setCurrentId(sub.id);
+              }}
+              className="glass-card flex cursor-pointer flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
             >
-              <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
-                <FolderClosed className="h-5 w-5" />
-              </span>
+              <div className="flex items-start justify-between">
+                <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
+                  <FolderClosed className="h-5 w-5" />
+                </span>
+                {canRenameFolder(profile ?? null, sub.ownerEmail) && (
+                  <FolderCardMenu
+                    name={sub.name}
+                    onRename={(next) => renameMockSubfolder(slug, sub.id, next)}
+                  />
+                )}
+              </div>
               <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
               <p className="text-xs text-muted-foreground">
                 {childrenOf(subfolders, sub.id).length} sub-folders
               </p>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -331,7 +360,7 @@ function FolderBrowser() {
             <DialogDescription>
               The folder will be added inside{" "}
               <span className="font-medium">
-                {trail.at(-1)?.name ?? folder.name}
+                {trail.at(-1)?.name ?? folderName}
               </span>
               .
             </DialogDescription>
