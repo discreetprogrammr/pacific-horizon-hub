@@ -2,6 +2,7 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+  ClipboardPaste,
   Download,
   FileText,
   FolderClosed,
@@ -10,6 +11,7 @@ import {
   Lock,
   Trash2,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,8 +56,11 @@ import {
   useMockSubfolders,
 } from "@/lib/mock-subfolders";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
+import { FileRowMenu } from "@/components/portal/file-row-menu";
+import { clearClipboard, setClipboard, useClipboard } from "@/lib/clipboard";
 import {
   canWrite,
+  copyFileToFolder,
   deleteFile,
   downloadFile,
   fetchFiles,
@@ -63,9 +68,11 @@ import {
   fetchProfile,
   formatBytes,
   formatDate,
+  moveFileToFolder,
   uploadFile,
   type PortalFile,
 } from "@/lib/portal";
+
 
 
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
@@ -151,6 +158,31 @@ function FolderBrowser() {
     },
     onError: (error: Error) => toast.error(error.message || "Delete failed"),
   });
+
+  const clipboard = useClipboard();
+
+  const paste = useMutation({
+    mutationFn: async () => {
+      if (!clipboard || !folder || !profile) return;
+      if (clipboard.action === "copy") {
+        await copyFileToFolder(clipboard.file, folder, profile.id);
+      } else {
+        await moveFileToFolder(clipboard.file, folder);
+      }
+    },
+    onSuccess: () => {
+      const wasCut = clipboard?.action === "cut";
+      const sourceId = clipboard?.sourceFolderId;
+      clearClipboard();
+      toast.success(wasCut ? "File moved" : "File copied");
+      queryClient.invalidateQueries({ queryKey: ["files", folder?.id] });
+      if (sourceId) queryClient.invalidateQueries({ queryKey: ["files", sourceId] });
+      queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not complete that action"),
+  });
+
 
   async function handleDownload(file: PortalFile) {
     try {
@@ -257,6 +289,44 @@ function FolderBrowser() {
           )}
         </div>
       </div>
+
+      {clipboard && (
+        <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {clipboard.file.name}
+            </span>{" "}
+            ready to {clipboard.action === "cut" ? "move" : "copy"} from{" "}
+            {clipboard.sourceFolderName}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => clearClipboard()}>
+              <X className="mr-2 h-4 w-4" />
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={
+                !writable ||
+                currentId !== null ||
+                paste.isPending ||
+                (clipboard.action === "cut" &&
+                  clipboard.sourceFolderId === folder.id)
+              }
+              onClick={() => paste.mutate()}
+            >
+              {paste.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <ClipboardPaste className="mr-2 h-4 w-4" />
+              )}
+              {clipboard.action === "cut" ? "Move here" : "Paste here"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+
 
 
       {writable ? (
@@ -418,12 +488,26 @@ function FolderBrowser() {
                 </TableCell>
               </TableRow>
             )}
-            {visibleFiles.map((file) => (
-              <TableRow key={file.id}>
+            {visibleFiles.map((file) => {
+              const clipped = clipboard?.file.id === file.id;
+              return (
+              <TableRow
+                key={file.id}
+                className={clipped ? "bg-accent/40" : undefined}
+              >
                 <TableCell className="font-medium">
                   <span className="flex items-center gap-2">
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{file.name}</span>
+                    <span
+                      className={`truncate ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
+                    >
+                      {file.name}
+                    </span>
+                    {clipped && (
+                      <Badge variant="secondary" className="shrink-0 capitalize">
+                        {clipboard?.action}
+                      </Badge>
+                    )}
                   </span>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-muted-foreground">
@@ -456,10 +540,31 @@ function FolderBrowser() {
                         <span className="sr-only">Delete</span>
                       </Button>
                     )}
+                    <FileRowMenu
+                      canCut={writable}
+                      onCut={() =>
+                        setClipboard({
+                          action: "cut",
+                          file,
+                          sourceFolderId: folder.id,
+                          sourceFolderName: folderName,
+                        })
+                      }
+                      onCopy={() =>
+                        setClipboard({
+                          action: "copy",
+                          file,
+                          sourceFolderId: folder.id,
+                          sourceFolderName: folderName,
+                        })
+                      }
+                    />
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
+
           </TableBody>
         </Table>
       </div>
