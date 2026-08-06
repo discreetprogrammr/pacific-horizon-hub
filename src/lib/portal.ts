@@ -82,17 +82,25 @@ export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
   const { data, error } = await supabase
     .from("files")
     .select(
-      "id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at, profiles:uploaded_by(email)",
+      "id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at",
     )
     .eq("folder_id", folderId)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row) => {
-    const { profiles, ...rest } = row as unknown as PortalFile & {
-      profiles: { email: string } | null;
-    };
-    return { ...rest, uploader_email: profiles?.email ?? null };
-  });
+  const rows = (data ?? []) as PortalFile[];
+
+  const uploaderIds = [...new Set(rows.map((r) => r.uploaded_by))];
+  if (uploaderIds.length === 0) return rows;
+
+  const { data: people } = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", uploaderIds);
+
+  const byId = new Map(
+    (people ?? []).map((p) => [p.id, p.full_name || p.email] as const),
+  );
+  return rows.map((r) => ({ ...r, uploader_email: byId.get(r.uploaded_by) ?? "—" }));
 }
 
 export async function fetchFolderCounts(folderIds: string[]) {
