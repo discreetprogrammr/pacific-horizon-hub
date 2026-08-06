@@ -1,7 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { FolderClosed, LayoutGrid, ShieldCheck } from "lucide-react";
 
-import logo from "@/assets/logo.png.asset.json";
 import {
   Sidebar,
   SidebarContent,
