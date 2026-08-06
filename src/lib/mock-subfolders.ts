@@ -5,10 +5,13 @@ export interface MockSubfolder {
   name: string;
   parentId: string | null; // null = root of the department folder
   createdAt: string;
+  ownerEmail: string | null;
 }
 
 // In-memory mock store (frontend only, resets on reload).
 const store: Record<string, MockSubfolder[]> = {};
+// Renamed root (department) folders — mock overrides keyed by slug.
+const rootNames: Record<string, string> = {};
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -30,20 +33,56 @@ export function useMockSubfolders(folderSlug: string): MockSubfolder[] {
   );
 }
 
+export function useMockRootNames(): Record<string, string> {
+  return useSyncExternalStore(
+    subscribe,
+    () => rootNames,
+    () => rootNames,
+  );
+}
+
+export function renameRootFolder(slug: string, name: string) {
+  rootNames[slug] = name.trim();
+  emit();
+}
+
 export function addMockSubfolder(
   folderSlug: string,
   name: string,
   parentId: string | null,
+  ownerEmail: string | null = null,
 ) {
   const next: MockSubfolder = {
     id: crypto.randomUUID(),
     name: name.trim(),
     parentId,
     createdAt: new Date().toISOString(),
+    ownerEmail,
   };
   store[folderSlug] = [...(store[folderSlug] ?? []), next];
   emit();
   return next;
+}
+
+export function renameMockSubfolder(
+  folderSlug: string,
+  id: string,
+  name: string,
+) {
+  store[folderSlug] = (store[folderSlug] ?? []).map((f) =>
+    f.id === id ? { ...f, name: name.trim() } : f,
+  );
+  emit();
+}
+
+/** Simulated RBAC: super admins can rename anything, owners can rename their own. */
+export function canRenameFolder(
+  profile: { email?: string | null; role?: string | null } | null,
+  ownerEmail: string | null,
+) {
+  if (!profile) return false;
+  if (profile.role === "super_admin") return true;
+  return !!ownerEmail && ownerEmail === profile.email;
 }
 
 export function childrenOf(all: MockSubfolder[], parentId: string | null) {
