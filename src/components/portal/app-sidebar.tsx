@@ -32,7 +32,7 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
         <div className="flex items-center gap-2">
           {collapsed ? (
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/10">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white p-1">
               <img
                 src={logo.url}
                 alt="Pacific Horizon Tek Inc."
@@ -42,11 +42,13 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
             </span>
           ) : (
             <div className="min-w-0">
-              <img
-                src={logo.url}
-                alt="Pacific Horizon Tek Inc."
-                className="h-10 w-auto object-contain"
-              />
+              <span className="flex w-fit items-center rounded-lg bg-white px-2 py-1.5">
+                <img
+                  src={logo.url}
+                  alt="Pacific Horizon Tek Inc."
+                  className="h-8 w-auto object-contain"
+                />
+              </span>
               <p className="mt-2 truncate text-sm font-semibold tracking-tight">
                 Pacific Horizon Tek
               </p>

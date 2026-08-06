@@ -62,11 +62,13 @@ function LoginPage() {
     <div className="auth-backdrop flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-6 flex justify-center">
-          <img
-            src={logo.url}
-            alt="Pacific Horizon Tek Inc."
-            className="h-20 w-auto drop-shadow-xl"
-          />
+          <span className="flex items-center rounded-2xl bg-white px-6 py-4 shadow-xl">
+            <img
+              src={logo.url}
+              alt="Pacific Horizon Tek Inc."
+              className="h-14 w-auto object-contain"
+            />
+          </span>
         </div>
 
         <div className="glass-card rounded-2xl p-7">
