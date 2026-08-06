@@ -53,6 +53,9 @@ import {
   pathOf,
   renameMockSubfolder,
   renameRootFolder,
+  placementOf,
+  setFilePlacement,
+  useFilePlacements,
   useMockRootNames,
   useMockSubfolders,
 } from "@/lib/mock-subfolders";
@@ -112,6 +115,7 @@ function FolderBrowser() {
 
 
   const subfolders = useMockSubfolders(slug);
+  const placements = useFilePlacements();
   const rootNames = useMockRootNames();
   const trail = pathOf(subfolders, currentId);
   const visibleSubfolders = childrenOf(subfolders, currentId);
@@ -133,8 +137,10 @@ function FolderBrowser() {
     enabled: !!folder?.id,
   });
 
-  // Mock sub-folders have no files yet — real files live at the folder root.
-  const visibleFiles: PortalFile[] = currentId === null ? (files ?? []) : [];
+  // Files are placed into mock sub-folders client-side; unplaced files sit at the root.
+  const visibleFiles: PortalFile[] = (files ?? []).filter(
+    (f) => placementOf(placements, f.id) === currentId,
+  );
 
   const writable = canWrite(profile ?? null, folder ?? null);
 
@@ -173,10 +179,13 @@ function FolderBrowser() {
       if (!clipboard) throw new Error("Nothing on the clipboard");
       if (!folder) throw new Error("Destination folder unavailable");
       if (!profile) throw new Error("Your session has expired — sign in again");
+      const destinationId = currentId;
       if (clipboard.action === "copy") {
-        await copyFileToFolder(clipboard.file, folder, profile.id);
+        const newId = await copyFileToFolder(clipboard.file, folder, profile.id);
+        if (newId) setFilePlacement(newId, destinationId);
       } else {
         await moveFileToFolder(clipboard.file, folder);
+        setFilePlacement(clipboard.file.id, destinationId);
       }
       return {
         action: clipboard.action,
