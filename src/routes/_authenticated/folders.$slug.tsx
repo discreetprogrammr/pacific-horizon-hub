@@ -338,15 +338,15 @@ function FolderBrowser() {
             {clipboard.sourceFolderName}
             {currentId !== null && (
               <span className="ml-1 text-xs">
-                — go back to {folderName} to paste.
+                — files live at the top level of {folderName}, so it will be
+                placed there.
               </span>
             )}
-            {currentId === null &&
-              clipboard.action === "cut" &&
+            {clipboard.action === "cut" &&
               clipboard.sourceFolderId === folder.id && (
                 <span className="ml-1 text-xs">— already in this folder.</span>
               )}
-            {currentId === null && !writable && (
+            {!writable && (
               <span className="ml-1 text-xs">
                 — you don't have upload rights here.
               </span>
@@ -361,19 +361,24 @@ function FolderBrowser() {
               size="sm"
               disabled={
                 !writable ||
-                currentId !== null ||
                 paste.isPending ||
                 (clipboard.action === "cut" &&
                   clipboard.sourceFolderId === folder.id)
               }
-              onClick={() => paste.mutate()}
+              onClick={() => {
+                // Real files always live at the folder root, so surface them there.
+                setCurrentId(null);
+                paste.mutate();
+              }}
             >
               {paste.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <ClipboardPaste className="mr-2 h-4 w-4" />
               )}
-              {clipboard.action === "cut" ? "Move here" : "Paste here"}
+              {clipboard.action === "cut"
+                ? `Move to ${folderName}`
+                : `Paste into ${folderName}`}
             </Button>
           </div>
         </div>

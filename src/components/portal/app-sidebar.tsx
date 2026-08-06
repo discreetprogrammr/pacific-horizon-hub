@@ -48,7 +48,7 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
                 className="h-10 w-auto object-contain"
               />
               <p className="mt-2 truncate text-sm font-semibold tracking-tight">
-                Pacific Horizon Care
+                Pacific Horizon Tek
               </p>
               <p className="truncate text-[11px] text-sidebar-foreground/60">
                 Internal Resource Portal
