@@ -71,7 +71,7 @@ function LoginPage() {
 
         <div className="glass-card rounded-2xl p-7">
           <h1 className="text-center text-xl font-semibold tracking-tight text-foreground">
-            Pacific Horizon Care
+            Pacific Horizon Tek
           </h1>
           <p className="mt-1 text-center text-sm text-muted-foreground">
             Internal Resource Portal — authorised personnel only
