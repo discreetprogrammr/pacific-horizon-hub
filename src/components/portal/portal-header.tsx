@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, LogOut } from "lucide-react";
 import { toast } from "sonner";
 
-import logo from "@/assets/logo.png.asset.json";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +19,8 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ChangePasswordDialog } from "@/components/portal/change-password-dialog";
 import { initialsOf, type PortalProfile } from "@/lib/portal";
+
+const LOGO_URL = "/pacific-horizon-tek-logo.png";
 
 export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
       <div className="flex min-w-0 items-center gap-2">
         <span className="flex h-12 items-center rounded-lg bg-white px-3 shadow-sm ring-1 ring-border">
           <img
-            src={logo.url}
+            src={LOGO_URL}
             alt="Pacific Horizon Tek Inc."
             className="h-10 w-auto object-contain"
           />

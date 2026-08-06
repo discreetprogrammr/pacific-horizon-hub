@@ -1,7 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { FolderClosed, LayoutGrid, ShieldCheck } from "lucide-react";
 
-import logo from "@/assets/logo.png.asset.json";
 import {
   Sidebar,
   SidebarContent,
@@ -16,6 +15,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import type { Folder, PortalProfile } from "@/lib/portal";
+
+const LOGO_URL = "/pacific-horizon-tek-logo.png";
 
 interface AppSidebarProps {
   folders: Folder[];
@@ -34,7 +35,7 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
           {collapsed ? (
             <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white p-1">
               <img
-                src={logo.url}
+                src={LOGO_URL}
                 alt="Pacific Horizon Tek Inc."
                 className="h-8 w-auto max-w-none"
                 style={{ objectFit: "cover", objectPosition: "left center", width: "auto" }}
@@ -44,7 +45,7 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
             <div className="min-w-0">
               <span className="flex w-fit items-center rounded-lg bg-white px-2 py-1.5">
                 <img
-                  src={logo.url}
+                  src={LOGO_URL}
                   alt="Pacific Horizon Tek Inc."
                   className="h-8 w-auto object-contain"
                 />

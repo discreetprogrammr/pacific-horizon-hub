@@ -2,11 +2,12 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Loader2, Lock, ShieldCheck } from "lucide-react";
 
-import logo from "@/assets/logo.png.asset.json";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+const LOGO_URL = "/pacific-horizon-tek-logo.png";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -64,7 +65,7 @@ function LoginPage() {
         <div className="mb-6 flex justify-center">
           <span className="flex items-center rounded-2xl bg-white px-6 py-4 shadow-xl">
             <img
-              src={logo.url}
+              src={LOGO_URL}
               alt="Pacific Horizon Tek Inc."
               className="h-14 w-auto object-contain"
             />
