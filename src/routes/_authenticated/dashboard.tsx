@@ -5,6 +5,12 @@ import { FolderClosed, Lock, ShieldCheck, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { canWrite, fetchFolderCounts, fetchFolders, fetchProfile } from "@/lib/portal";
+import { FolderCardMenu } from "@/components/portal/folder-card-menu";
+import {
+  canRenameFolder,
+  renameRootFolder,
+  useMockRootNames,
+} from "@/lib/mock-subfolders";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -31,6 +37,7 @@ function Dashboard() {
     queryKey: ["folders"],
     queryFn: fetchFolders,
   });
+  const rootNames = useMockRootNames();
   const { data: counts } = useQuery({
     queryKey: ["folder-counts", (folders ?? []).map((f) => f.id)],
     queryFn: () => fetchFolderCounts((folders ?? []).map((f) => f.id)),
@@ -79,6 +86,9 @@ function Dashboard() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {(folders ?? []).map((folder) => {
               const writable = canWrite(profile ?? null, folder);
+              // Root department folders have no individual owner in the mock data.
+              const renamable = canRenameFolder(profile ?? null, null);
+              const displayName = rootNames[folder.slug] ?? folder.name;
               return (
                 <Link
                   key={folder.id}
@@ -90,11 +100,19 @@ function Dashboard() {
                     <span className="brand-gradient inline-flex h-11 w-11 items-center justify-center rounded-xl text-primary-foreground">
                       <FolderClosed className="h-5 w-5" />
                     </span>
-                    <Badge variant={writable ? "default" : "secondary"}>
-                      {writable ? "Read & Upload" : "Read only"}
-                    </Badge>
+                    <div className="flex items-center gap-1">
+                      <Badge variant={writable ? "default" : "secondary"}>
+                        {writable ? "Read & Upload" : "Read only"}
+                      </Badge>
+                      {renamable && (
+                        <FolderCardMenu
+                          name={displayName}
+                          onRename={(next) => renameRootFolder(folder.slug, next)}
+                        />
+                      )}
+                    </div>
                   </div>
-                  <h3 className="mt-4 font-semibold tracking-tight">{folder.name}</h3>
+                  <h3 className="mt-4 font-semibold tracking-tight">{displayName}</h3>
                   <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
                     {folder.description}
                   </p>
