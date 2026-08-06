@@ -88,6 +88,18 @@ function FolderBrowser() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [currentId, setCurrentId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const subfolders = useMockSubfolders(slug);
+  const trail = pathOf(subfolders, currentId);
+  const visibleSubfolders = childrenOf(subfolders, currentId);
+
+  useEffect(() => {
+    setCurrentId(null);
+  }, [slug]);
+
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: folder, isLoading: folderLoading } = useQuery({
