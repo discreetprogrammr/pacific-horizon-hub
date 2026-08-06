@@ -159,6 +159,31 @@ function FolderBrowser() {
     onError: (error: Error) => toast.error(error.message || "Delete failed"),
   });
 
+  const clipboard = useClipboard();
+
+  const paste = useMutation({
+    mutationFn: async () => {
+      if (!clipboard || !folder || !profile) return;
+      if (clipboard.action === "copy") {
+        await copyFileToFolder(clipboard.file, folder, profile.id);
+      } else {
+        await moveFileToFolder(clipboard.file, folder);
+      }
+    },
+    onSuccess: () => {
+      const wasCut = clipboard?.action === "cut";
+      const sourceId = clipboard?.sourceFolderId;
+      clearClipboard();
+      toast.success(wasCut ? "File moved" : "File copied");
+      queryClient.invalidateQueries({ queryKey: ["files", folder?.id] });
+      if (sourceId) queryClient.invalidateQueries({ queryKey: ["files", sourceId] });
+      queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not complete that action"),
+  });
+
+
   async function handleDownload(file: PortalFile) {
     try {
       await downloadFile(file);
