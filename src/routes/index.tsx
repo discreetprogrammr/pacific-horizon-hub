@@ -65,7 +65,7 @@ function LoginPage() {
         <div className="mb-6 flex justify-center">
           <span className="flex items-center rounded-2xl bg-white px-6 py-4 shadow-xl">
             <img
-              src={logo.url}
+              src={LOGO_URL}
               alt="Pacific Horizon Tek Inc."
               className="h-14 w-auto object-contain"
             />
