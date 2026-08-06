@@ -96,6 +96,7 @@ function FolderBrowser() {
   const trail = pathOf(subfolders, currentId);
   const visibleSubfolders = childrenOf(subfolders, currentId);
 
+
   useEffect(() => {
     setCurrentId(null);
   }, [slug]);
