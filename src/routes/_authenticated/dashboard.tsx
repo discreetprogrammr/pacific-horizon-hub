@@ -1,0 +1,123 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { FolderClosed, Lock, ShieldCheck, Upload } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { canWrite, fetchFolderCounts, fetchFolders, fetchProfile } from "@/lib/portal";
+
+export const Route = createFileRoute("/_authenticated/dashboard")({
+  head: () => ({
+    meta: [
+      { title: "Dashboard | Pacific Horizon Care Portal" },
+      {
+        name: "description",
+        content:
+          "Secure internal dashboard for Pacific Horizon Care staff to access department document folders.",
+      },
+      { property: "og:title", content: "Dashboard | Pacific Horizon Care Portal" },
+      {
+        property: "og:description",
+        content: "Secure internal document dashboard for Pacific Horizon Care staff.",
+      },
+    ],
+  }),
+  component: Dashboard,
+});
+
+function Dashboard() {
+  const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
+  const { data: folders, isLoading } = useQuery({
+    queryKey: ["folders"],
+    queryFn: fetchFolders,
+  });
+  const { data: counts } = useQuery({
+    queryKey: ["folder-counts", (folders ?? []).map((f) => f.id)],
+    queryFn: () => fetchFolderCounts((folders ?? []).map((f) => f.id)),
+    enabled: !!folders?.length,
+  });
+
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-8">
+      <section className="brand-gradient relative overflow-hidden rounded-2xl px-6 py-8 text-primary-foreground shadow-[var(--shadow-elevated)]">
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          Welcome back{profile?.full_name ? `, ${profile.full_name}` : ""}
+        </h1>
+        <p className="mt-2 max-w-xl text-sm text-primary-foreground/80">
+          Your secure workspace for company documents. Every file is encrypted at rest
+          and delivered through short-lived signed links.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            {profile?.role === "super_admin"
+              ? "Super Admin — full access"
+              : `Department access — ${profile?.department ?? "—"}`}
+          </span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1">
+            <Lock className="h-3.5 w-3.5" />
+            Private storage
+          </span>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Your folders</h2>
+          <p className="text-sm text-muted-foreground">
+            Only folders permitted by your role are shown.
+          </p>
+        </div>
+
+        {isLoading ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-40 rounded-2xl" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {(folders ?? []).map((folder) => {
+              const writable = canWrite(profile ?? null, folder);
+              return (
+                <Link
+                  key={folder.id}
+                  to="/folders/$slug"
+                  params={{ slug: folder.slug }}
+                  className="glass-card group flex flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
+                >
+                  <div className="flex items-start justify-between">
+                    <span className="brand-gradient inline-flex h-11 w-11 items-center justify-center rounded-xl text-primary-foreground">
+                      <FolderClosed className="h-5 w-5" />
+                    </span>
+                    <Badge variant={writable ? "default" : "secondary"}>
+                      {writable ? "Read & Upload" : "Read only"}
+                    </Badge>
+                  </div>
+                  <h3 className="mt-4 font-semibold tracking-tight">{folder.name}</h3>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                    {folder.description}
+                  </p>
+                  <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
+                    <span>{counts?.[folder.id] ?? 0} files</span>
+                    {writable && (
+                      <span className="inline-flex items-center gap-1">
+                        <Upload className="h-3.5 w-3.5" /> Upload enabled
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
+        {!isLoading && (folders ?? []).length === 0 && (
+          <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            No folders are assigned to your account. Contact your administrator.
+          </p>
+        )}
+      </section>
+    </div>
+  );
+}
