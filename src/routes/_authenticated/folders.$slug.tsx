@@ -149,7 +149,20 @@ function FolderBrowser() {
     }
   }
 
+  function handleCreateFolder() {
+    const name = newName.trim();
+    if (!name) {
+      toast.error("Enter a folder name");
+      return;
+    }
+    addMockSubfolder(slug, name, currentId);
+    setNewName("");
+    setDialogOpen(false);
+    toast.success(`Folder "${name}" created`);
+  }
+
   if (folderLoading) {
+
     return <Skeleton className="mx-auto h-64 w-full max-w-6xl rounded-2xl" />;
   }
 
