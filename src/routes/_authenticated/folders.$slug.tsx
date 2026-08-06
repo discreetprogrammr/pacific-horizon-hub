@@ -224,11 +224,12 @@ function FolderBrowser() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {trail.length ? trail[trail.length - 1].name : folder.name}
+            {trail.at(-1)?.name ?? folder.name}
           </h1>
           <p className="text-sm text-muted-foreground">
             {trail.length ? `Inside ${folder.name}` : folder.description}
           </p>
+
         </div>
         <Badge variant={writable ? "default" : "secondary"}>
           {writable ? "Read & Upload" : "Read only"}
