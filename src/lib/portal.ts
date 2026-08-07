@@ -6,6 +6,8 @@ export interface PortalProfile {
   id: string;
   email: string;
   full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   department: string | null;
   role: AppRole;
 }
