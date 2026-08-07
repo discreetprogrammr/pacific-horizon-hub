@@ -42,21 +42,27 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 function Dashboard() {
   const queryClient = useQueryClient();
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
-  const { data: folders, isLoading } = useQuery({
-    queryKey: ["folders"],
-    queryFn: fetchFolders,
+  const { data: allFolders, isLoading } = useQuery({
+    queryKey: ["folders", "all"],
+    queryFn: fetchAllFolders,
   });
-  const rootNames = useMockRootNames();
+  const all: Folder[] = allFolders ?? [];
+  const folders: Folder[] = all.filter((f) => f.parent_id === null);
+
   const { data: counts } = useQuery({
-    queryKey: ["folder-counts", (folders ?? []).map((f) => f.id)],
-    queryFn: () => fetchFolderCounts((folders ?? []).map((f) => f.id)),
-    enabled: !!folders?.length,
+    queryKey: ["folder-counts", all.map((f) => f.id)],
+    queryFn: () => fetchFolderCounts(all.map((f) => f.id)),
+    enabled: all.length > 0,
   });
+
+  // A department card counts everything stored in it, sub-folders included.
+  const totalFor = (folder: Folder) =>
+    subtreeIds(all, folder.id).reduce((sum, id) => sum + (counts?.[id] ?? 0), 0);
 
   const isAdmin = profile?.role === "super_admin";
 
   const removeFolder = useMutation({
-    mutationFn: (folder: Folder) => deleteFolder(folder),
+    mutationFn: (folder: Folder) => deleteFolder(folder, all),
     onSuccess: () => {
       toast.success("Folder deleted");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
@@ -65,6 +71,18 @@ function Dashboard() {
     onError: (error: Error) =>
       toast.error(error.message || "Could not delete this folder"),
   });
+
+  const renameFolder = useMutation({
+    mutationFn: ({ target, name }: { target: Folder; name: string }) =>
+      renameFolderRow(target, name),
+    onSuccess: () => {
+      toast.success("Folder renamed");
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not rename this folder"),
+  });
+
 
 
   return (
