@@ -72,7 +72,7 @@ function Dashboard() {
     <div className="mx-auto w-full max-w-6xl space-y-8">
       <section className="brand-gradient relative overflow-hidden rounded-2xl px-6 py-8 text-primary-foreground shadow-[var(--shadow-elevated)]">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-          Welcome back{profile ? `, ${firstNameOf(profile)}` : ""}
+          Welcome back{profile ? `, ${firstNameOf(profile)}!` : ""}
         </h1>
         <p className="mt-2 max-w-xl text-sm text-primary-foreground/80">
           Your secure workspace for company documents. Every file is encrypted at rest
