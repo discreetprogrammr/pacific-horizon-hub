@@ -1,4 +1,12 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+
+/**
+ * Folder rows carry columns (parent_id, owner_email, created_by) that the
+ * generated types do not know about yet, so folder queries go through a
+ * loosely typed view of the same client.
+ */
+const db = supabase as unknown as SupabaseClient;
 
 export type AppRole = "super_admin" | "department_user";
 
@@ -18,6 +26,9 @@ export interface Folder {
   name: string;
   description: string | null;
   department: string;
+  parent_id: string | null;
+  owner_email: string | null;
+  created_by: string | null;
 }
 
 export interface PortalFile {
@@ -33,6 +44,7 @@ export interface PortalFile {
 }
 
 export const BUCKET = "company-files";
+
 
 export async function fetchProfile(): Promise<PortalProfile | null> {
   const { data: userData } = await supabase.auth.getUser();
