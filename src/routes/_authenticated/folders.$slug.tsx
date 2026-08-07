@@ -383,8 +383,8 @@ function FolderBrowser() {
         const destinationName = trail.at(-1)?.name ?? folderName;
         const alreadyHere =
           clipboard.action === "cut" &&
-          clipboard.sourceFolderId === folder.id &&
-          placementOf(placements, clipboard.file.id) === currentId;
+          clipboard.sourceFolderId === activeFolder?.id;
+
         return (
         <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
           <p className="text-sm text-muted-foreground">
