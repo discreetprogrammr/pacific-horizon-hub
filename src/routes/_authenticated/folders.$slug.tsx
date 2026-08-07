@@ -363,7 +363,10 @@ function FolderBrowser() {
           {trail.length === 0 && canRenameRoot && (
             <FolderCardMenu
               name={folderName}
-              onRename={(next) => renameRootFolder(folder.slug, next)}
+              onRename={(next) =>
+                renameFolder.mutate({ target: folder, name: next })
+              }
+
               {...(isAdmin
                 ? {
                     onDelete: () => removeFolder.mutateAsync(),
