@@ -107,51 +107,61 @@ function FolderBrowser() {
   const [previewFile, setPreviewFile] = useState<PortalFile | null>(null);
 
 
-  const subfolders = useMockSubfolders(slug);
-  const placements = useFilePlacements();
-  const rootNames = useMockRootNames();
-  const trail = pathOf(subfolders, currentId);
-  const visibleSubfolders = childrenOf(subfolders, currentId);
+  const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
+  const { data: allFolders, isLoading: folderLoading } = useQuery({
+    queryKey: ["folders", "all"],
+    queryFn: fetchAllFolders,
+  });
 
+  const folders: Folder[] = allFolders ?? [];
+  const folder = folders.find((f) => f.slug === slug) ?? null;
+
+  // The folder currently being browsed — the root, or the deepest sub-folder open.
+  const activeFolder: Folder | null =
+    (currentId ? folders.find((f) => f.id === currentId) : folder) ?? folder;
+
+  const trail = pathOf(folders, activeFolder?.id ?? null);
+  const visibleSubfolders = activeFolder
+    ? childrenOf(folders, activeFolder.id)
+    : [];
 
   useEffect(() => {
     setCurrentId(null);
   }, [slug]);
 
+  // If the open sub-folder disappeared (deleted elsewhere), fall back to the root.
+  useEffect(() => {
+    if (currentId && allFolders && !folders.some((f) => f.id === currentId)) {
+      setCurrentId(null);
+    }
+  }, [currentId, allFolders, folders]);
 
-  const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
-  const { data: folder, isLoading: folderLoading } = useQuery({
-    queryKey: ["folder", slug],
-    queryFn: () => fetchFolderBySlug(slug),
-  });
   const { data: files, isLoading: filesLoading } = useQuery({
-    queryKey: ["files", folder?.id],
-    queryFn: () => fetchFiles(folder!.id),
-    enabled: !!folder?.id,
+    queryKey: ["files", activeFolder?.id],
+    queryFn: () => fetchFiles(activeFolder!.id),
+    enabled: !!activeFolder?.id,
   });
 
-  // Files are placed into mock sub-folders client-side; unplaced files sit at the root.
-  const visibleFiles: PortalFile[] = (files ?? []).filter(
-    (f) => placementOf(placements, f.id) === currentId,
-  );
+  // Files belong to the active folder row itself — no client-side placement.
+  const visibleFiles: PortalFile[] = files ?? [];
 
-  const writable = canWrite(profile ?? null, folder ?? null);
+  const writable = canWrite(profile ?? null, activeFolder);
 
   const isAdmin = profile?.role === "super_admin";
 
   const upload = useMutation({
     mutationFn: async (fileList: File[]) => {
-      // Capture the deepest active sub-folder so uploads land where the user is.
-      const destinationId = currentId;
+      // Uploads target the exact folder row the user is standing in.
+      const destination = activeFolder;
+      if (!destination) throw new Error("Destination folder unavailable");
       for (const file of fileList) {
         setProgress(5);
-        const newId = await uploadFile(folder!, file, profile!.id, setProgress);
-        if (newId) setFilePlacement(newId, destinationId);
+        await uploadFile(destination, file, profile!.id, setProgress);
       }
     },
     onSuccess: () => {
       toast.success("Upload complete");
-      queryClient.invalidateQueries({ queryKey: ["files", folder?.id] });
+      queryClient.invalidateQueries({ queryKey: ["files", activeFolder?.id] });
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
     onError: (error: Error) => toast.error(error.message || "Upload failed"),
@@ -162,7 +172,7 @@ function FolderBrowser() {
     mutationFn: (file: PortalFile) => deleteFile(file),
     onSuccess: () => {
       toast.success("File deleted");
-      queryClient.invalidateQueries({ queryKey: ["files", folder?.id] });
+      queryClient.invalidateQueries({ queryKey: ["files", activeFolder?.id] });
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
     onError: (error: Error) => toast.error(error.message || "Delete failed"),
@@ -173,15 +183,12 @@ function FolderBrowser() {
   const paste = useMutation({
     mutationFn: async () => {
       if (!clipboard) throw new Error("Nothing on the clipboard");
-      if (!folder) throw new Error("Destination folder unavailable");
+      if (!activeFolder) throw new Error("Destination folder unavailable");
       if (!profile) throw new Error("Your session has expired — sign in again");
-      const destinationId = currentId;
       if (clipboard.action === "copy") {
-        const newId = await copyFileToFolder(clipboard.file, folder, profile.id);
-        if (newId) setFilePlacement(newId, destinationId);
+        await copyFileToFolder(clipboard.file, activeFolder, profile.id);
       } else {
-        await moveFileToFolder(clipboard.file, folder);
-        setFilePlacement(clipboard.file.id, destinationId);
+        await moveFileToFolder(clipboard.file, activeFolder);
       }
       return {
         action: clipboard.action,
@@ -206,7 +213,7 @@ function FolderBrowser() {
   const removeFolder = useMutation({
     mutationFn: async () => {
       if (!folder) throw new Error("Folder unavailable");
-      await deleteFolder(folder);
+      await deleteFolder(folder, folders);
     },
     onSuccess: () => {
       toast.success("Folder deleted");
@@ -218,7 +225,44 @@ function FolderBrowser() {
       toast.error(error.message || "Could not delete this folder"),
   });
 
+  const renameFolder = useMutation({
+    mutationFn: ({ target, name }: { target: Folder; name: string }) =>
+      renameFolderRow(target, name),
+    onSuccess: () => {
+      toast.success("Folder renamed");
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not rename this folder"),
+  });
 
+  const removeSubfolder = useMutation({
+    mutationFn: (target: Folder) => deleteFolder(target, folders),
+    onSuccess: () => {
+      toast.success("Folder deleted");
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+      queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not delete this folder"),
+  });
+
+  const createFolder = useMutation({
+    mutationFn: async (name: string) => {
+      if (!activeFolder) throw new Error("Folder unavailable");
+      if (!profile) throw new Error("Your session has expired — sign in again");
+      return createSubfolder(activeFolder, name, profile);
+    },
+    onSuccess: (created) => {
+      setNewName("");
+      setDialogOpen(false);
+      toast.success(`Folder "${created.name}" created`);
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not create this folder"),
+  });
 
   async function handleDownload(file: PortalFile) {
     try {
@@ -234,11 +278,9 @@ function FolderBrowser() {
       toast.error("Enter a folder name");
       return;
     }
-    addMockSubfolder(slug, name, currentId, profile?.email ?? null);
-    setNewName("");
-    setDialogOpen(false);
-    toast.success(`Folder "${name}" created`);
+    createFolder.mutate(name);
   }
+
 
   if (folderLoading) {
 
