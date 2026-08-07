@@ -181,19 +181,24 @@ export async function uploadFile(
   if (uploadError) throw uploadError;
 
   onProgress?.(80);
-  const { error: insertError } = await supabase.from("files").insert({
-    folder_id: folder.id,
-    name: file.name,
-    size: file.size,
-    mime_type: file.type || null,
-    storage_path: path,
-    uploaded_by: userId,
-  });
+  const { data: inserted, error: insertError } = await supabase
+    .from("files")
+    .insert({
+      folder_id: folder.id,
+      name: file.name,
+      size: file.size,
+      mime_type: file.type || null,
+      storage_path: path,
+      uploaded_by: userId,
+    })
+    .select("id")
+    .single();
   if (insertError) {
     await supabase.storage.from(BUCKET).remove([path]);
     throw insertError;
   }
   onProgress?.(100);
+  return inserted?.id ?? null;
 }
 
 export async function downloadFile(file: PortalFile) {
