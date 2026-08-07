@@ -509,23 +509,26 @@ function FolderBrowser() {
                 <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
                   <FolderClosed className="h-5 w-5" />
                 </span>
-                {canRenameFolder(profile ?? null, sub.ownerEmail) && (
+                {canRenameFolder(profile ?? null, sub) && (
                   <FolderCardMenu
                     name={sub.name}
-                    onRename={(next) => renameMockSubfolder(slug, sub.id, next)}
-                    onDelete={() => {
-                      deleteMockSubfolder(slug, sub.id);
-                      if (currentId === sub.id) setCurrentId(sub.parentId);
-                      toast.success(`Folder "${sub.name}" deleted`);
+                    onRename={(next) =>
+                      renameFolder.mutate({ target: sub, name: next })
+                    }
+                    onDelete={async () => {
+                      await removeSubfolder.mutateAsync(sub);
+                      if (currentId === sub.id) setCurrentId(sub.parent_id);
                     }}
-                    deleteDescription={`"${sub.name}" and all sub-folders inside it will be removed.`}
+                    deleting={removeSubfolder.isPending}
+                    deleteDescription={`"${sub.name}", its sub-folders and every file inside will be permanently deleted.`}
                   />
                 )}
 
               </div>
               <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
               <p className="text-xs text-muted-foreground">
-                {childrenOf(subfolders, sub.id).length} sub-folders
+                {childrenOf(folders, sub.id).length} sub-folders
+
               </p>
             </div>
           ))}
