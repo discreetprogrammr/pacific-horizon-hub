@@ -6,20 +6,19 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  canRenameFolder,
   canWrite,
   deleteFolder,
+  fetchAllFolders,
   firstNameOf,
   fetchFolderCounts,
-  fetchFolders,
   fetchProfile,
+  renameFolderRow,
+  subtreeIds,
   type Folder,
 } from "@/lib/portal";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
-import {
-  canRenameFolder,
-  renameRootFolder,
-  useMockRootNames,
-} from "@/lib/mock-subfolders";
+
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -43,21 +42,27 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 function Dashboard() {
   const queryClient = useQueryClient();
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
-  const { data: folders, isLoading } = useQuery({
-    queryKey: ["folders"],
-    queryFn: fetchFolders,
+  const { data: allFolders, isLoading } = useQuery({
+    queryKey: ["folders", "all"],
+    queryFn: fetchAllFolders,
   });
-  const rootNames = useMockRootNames();
+  const all: Folder[] = allFolders ?? [];
+  const folders: Folder[] = all.filter((f) => f.parent_id === null);
+
   const { data: counts } = useQuery({
-    queryKey: ["folder-counts", (folders ?? []).map((f) => f.id)],
-    queryFn: () => fetchFolderCounts((folders ?? []).map((f) => f.id)),
-    enabled: !!folders?.length,
+    queryKey: ["folder-counts", all.map((f) => f.id)],
+    queryFn: () => fetchFolderCounts(all.map((f) => f.id)),
+    enabled: all.length > 0,
   });
+
+  // A department card counts everything stored in it, sub-folders included.
+  const totalFor = (folder: Folder) =>
+    subtreeIds(all, folder.id).reduce((sum, id) => sum + (counts?.[id] ?? 0), 0);
 
   const isAdmin = profile?.role === "super_admin";
 
   const removeFolder = useMutation({
-    mutationFn: (folder: Folder) => deleteFolder(folder),
+    mutationFn: (folder: Folder) => deleteFolder(folder, all),
     onSuccess: () => {
       toast.success("Folder deleted");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
@@ -66,6 +71,18 @@ function Dashboard() {
     onError: (error: Error) =>
       toast.error(error.message || "Could not delete this folder"),
   });
+
+  const renameFolder = useMutation({
+    mutationFn: ({ target, name }: { target: Folder; name: string }) =>
+      renameFolderRow(target, name),
+    onSuccess: () => {
+      toast.success("Folder renamed");
+      queryClient.invalidateQueries({ queryKey: ["folders"] });
+    },
+    onError: (error: Error) =>
+      toast.error(error.message || "Could not rename this folder"),
+  });
+
 
 
   return (
@@ -108,11 +125,11 @@ function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {(folders ?? []).map((folder) => {
+            {folders.map((folder) => {
               const writable = canWrite(profile ?? null, folder);
-              // Root department folders have no individual owner in the mock data.
-              const renamable = canRenameFolder(profile ?? null, null);
-              const displayName = rootNames[folder.slug] ?? folder.name;
+              const renamable = canRenameFolder(profile ?? null, folder);
+              const displayName = folder.name;
+              const fileCount = totalFor(folder);
               return (
                 <Link
                   key={folder.id}
@@ -131,12 +148,14 @@ function Dashboard() {
                       {renamable && (
                         <FolderCardMenu
                           name={displayName}
-                          onRename={(next) => renameRootFolder(folder.slug, next)}
+                          onRename={(next) =>
+                            renameFolder.mutate({ target: folder, name: next })
+                          }
                           {...(isAdmin
                             ? {
                                 onDelete: () => removeFolder.mutateAsync(folder),
                                 deleting: removeFolder.isPending,
-                                deleteDescription: `"${displayName}" and all ${counts?.[folder.id] ?? 0} file(s) stored inside it will be permanently deleted. This cannot be undone.`,
+                                deleteDescription: `"${displayName}" and all ${fileCount} file(s) stored inside it will be permanently deleted. This cannot be undone.`,
                               }
                             : {})}
                         />
@@ -149,7 +168,8 @@ function Dashboard() {
                     {folder.description}
                   </p>
                   <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-                    <span>{counts?.[folder.id] ?? 0} files</span>
+                    <span>{fileCount} files</span>
+
                     {writable && (
                       <span className="inline-flex items-center gap-1">
                         <Upload className="h-3.5 w-3.5" /> Upload enabled

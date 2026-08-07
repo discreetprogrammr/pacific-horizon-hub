@@ -1,4 +1,12 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+
+/**
+ * Folder rows carry columns (parent_id, owner_email, created_by) that the
+ * generated types do not know about yet, so folder queries go through a
+ * loosely typed view of the same client.
+ */
+const db = supabase as unknown as SupabaseClient;
 
 export type AppRole = "super_admin" | "department_user";
 
@@ -18,6 +26,9 @@ export interface Folder {
   name: string;
   description: string | null;
   department: string;
+  parent_id: string | null;
+  owner_email: string | null;
+  created_by: string | null;
 }
 
 export interface PortalFile {
@@ -33,6 +44,7 @@ export interface PortalFile {
 }
 
 export const BUCKET = "company-files";
+
 
 export async function fetchProfile(): Promise<PortalProfile | null> {
   const { data: userData } = await supabase.auth.getUser();
@@ -102,24 +114,121 @@ export function firstNameOf(profile: PortalProfile) {
   );
 }
 
-export async function fetchFolders(): Promise<Folder[]> {
-  const { data, error } = await supabase
+const FOLDER_COLUMNS =
+  "id, slug, name, description, department, parent_id, owner_email, created_by";
+
+/** Every folder the signed-in user may see, roots and sub-folders alike. */
+export async function fetchAllFolders(): Promise<Folder[]> {
+  const { data, error } = await db
     .from("folders")
-    .select("id, slug, name, description, department")
+    .select(FOLDER_COLUMNS)
     .order("name");
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as Folder[];
+}
+
+/** Root (department) folders only — these are the dashboard cards. */
+export async function fetchFolders(): Promise<Folder[]> {
+  const all = await fetchAllFolders();
+  return all.filter((f) => f.parent_id === null);
 }
 
 export async function fetchFolderBySlug(slug: string): Promise<Folder | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("folders")
-    .select("id, slug, name, description, department")
+    .select(FOLDER_COLUMNS)
     .eq("slug", slug)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  return (data as Folder | null) ?? null;
 }
+
+/* ------------------------- hierarchy helpers ------------------------- */
+
+export function childrenOf(all: Folder[], parentId: string | null) {
+  return all.filter((f) => f.parent_id === parentId);
+}
+
+/** Trail of folders from the root's first child down to `id`. */
+export function pathOf(all: Folder[], id: string | null): Folder[] {
+  const trail: Folder[] = [];
+  let current = all.find((f) => f.id === id);
+  while (current && current.parent_id !== null) {
+    trail.unshift(current);
+    const parentId: string | null = current.parent_id;
+    current = all.find((f) => f.id === parentId);
+  }
+  return trail;
+}
+
+/** The folder itself plus every descendant beneath it. */
+export function subtreeIds(all: Folder[], id: string): string[] {
+  const ids = new Set<string>([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const f of all) {
+      if (f.parent_id && ids.has(f.parent_id) && !ids.has(f.id)) {
+        ids.add(f.id);
+        grew = true;
+      }
+    }
+  }
+  return [...ids];
+}
+
+function slugify(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "folder"
+  );
+}
+
+/** Create a persistent sub-folder inside `parent`. */
+export async function createSubfolder(
+  parent: Folder,
+  name: string,
+  profile: PortalProfile,
+): Promise<Folder> {
+  const trimmed = name.trim();
+  const { data, error } = await db
+    .from("folders")
+    .insert({
+      name: trimmed,
+      slug: `${slugify(trimmed)}-${crypto.randomUUID().slice(0, 8)}`,
+      description: null,
+      department: parent.department,
+      parent_id: parent.id,
+      created_by: profile.id,
+      owner_email: profile.email,
+    })
+    .select(FOLDER_COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as Folder;
+}
+
+export async function renameFolderRow(folder: Folder, name: string) {
+  const { error } = await db
+    .from("folders")
+    .update({ name: name.trim() })
+    .eq("id", folder.id);
+  if (error) throw error;
+}
+
+/** Super admins rename anything; creators rename the folders they made. */
+export function canRenameFolder(
+  profile: PortalProfile | null,
+  folder: Folder | null,
+) {
+  if (!profile || !folder) return false;
+  if (profile.role === "super_admin") return true;
+  return !!folder.owner_email && folder.owner_email === profile.email;
+}
+
 
 export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
   const { data, error } = await supabase
@@ -225,17 +334,19 @@ export async function deleteFile(file: PortalFile) {
 }
 
 /**
- * Delete a department folder: removes its stored objects, then the folder row.
- * File metadata rows cascade away with the folder. RLS limits this to super admins.
+ * Delete a folder and everything beneath it. Sub-folder rows and file metadata
+ * cascade away in the database; stored objects are removed here.
  */
-export async function deleteFolder(folder: Folder) {
+export async function deleteFolder(folder: Folder, all: Folder[] = []) {
+  const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];
+
   const { data: rows, error: listError } = await supabase
     .from("files")
     .select("storage_path")
-    .eq("folder_id", folder.id);
+    .in("folder_id", ids);
   if (listError) throw listError;
 
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await db
     .from("folders")
     .delete()
     .eq("id", folder.id);
@@ -244,6 +355,7 @@ export async function deleteFolder(folder: Folder) {
   const paths = (rows ?? []).map((r) => r.storage_path);
   if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
 }
+
 
 
 function targetPath(folder: Folder, fileName: string) {
