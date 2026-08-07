@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ChangePasswordDialog } from "@/components/portal/change-password-dialog";
-import { initialsOf, type PortalProfile } from "@/lib/portal";
+import { displayName, initialsOf, type PortalProfile } from "@/lib/portal";
 
 const LOGO_URL = "/pacific-horizon-tek-logo.png";
 
@@ -47,9 +47,6 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
             className="h-10 w-auto object-contain"
           />
         </span>
-        <span className="hidden truncate text-sm font-semibold tracking-tight md:inline">
-          Pacific Horizon Tek
-        </span>
       </div>
 
       <div className="ml-auto flex items-center gap-3">
@@ -64,7 +61,7 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
           </Badge>
         )}
         <div className="hidden text-right leading-tight sm:block">
-          <p className="text-sm font-medium">{profile?.full_name ?? "Staff"}</p>
+          <p className="text-sm font-medium">{profile ? displayName(profile) : "Staff"}</p>
           <p className="text-xs text-muted-foreground">{profile?.email}</p>
         </div>
 

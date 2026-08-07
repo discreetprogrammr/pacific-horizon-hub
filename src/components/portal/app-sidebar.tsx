@@ -50,10 +50,7 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
                   className="h-8 w-auto object-contain"
                 />
               </span>
-              <p className="mt-2 truncate text-sm font-semibold tracking-tight">
-                Pacific Horizon Tek
-              </p>
-              <p className="truncate text-[11px] text-sidebar-foreground/60">
+              <p className="mt-2 truncate text-[11px] text-sidebar-foreground/60">
                 Internal Resource Portal
               </p>
             </div>
