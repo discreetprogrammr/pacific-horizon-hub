@@ -45,39 +45,32 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import {
-  addMockSubfolder,
-  canRenameFolder,
-  childrenOf,
-  deleteMockSubfolder,
-  pathOf,
-  renameMockSubfolder,
-  renameRootFolder,
-  placementOf,
-  setFilePlacement,
-  useFilePlacements,
-  useMockRootNames,
-  useMockSubfolders,
-} from "@/lib/mock-subfolders";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
 import { FileRowMenu } from "@/components/portal/file-row-menu";
 import { FilePreviewDialog } from "@/components/portal/file-preview-dialog";
 import { clearClipboard, setClipboard, useClipboard } from "@/lib/clipboard";
 import {
+  canRenameFolder,
   canWrite,
+  childrenOf,
   copyFileToFolder,
+  createSubfolder,
   deleteFile,
   deleteFolder,
   downloadFile,
+  fetchAllFolders,
   fetchFiles,
-  fetchFolderBySlug,
   fetchProfile,
   formatBytes,
   formatDate,
   moveFileToFolder,
+  pathOf,
+  renameFolderRow,
   uploadFile,
+  type Folder,
   type PortalFile,
 } from "@/lib/portal";
+
 
 
 
