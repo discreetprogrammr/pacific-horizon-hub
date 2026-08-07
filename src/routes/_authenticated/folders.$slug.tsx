@@ -148,9 +148,12 @@ function FolderBrowser() {
 
   const upload = useMutation({
     mutationFn: async (fileList: File[]) => {
+      // Capture the deepest active sub-folder so uploads land where the user is.
+      const destinationId = currentId;
       for (const file of fileList) {
         setProgress(5);
-        await uploadFile(folder!, file, profile!.id, setProgress);
+        const newId = await uploadFile(folder!, file, profile!.id, setProgress);
+        if (newId) setFilePlacement(newId, destinationId);
       }
     },
     onSuccess: () => {
