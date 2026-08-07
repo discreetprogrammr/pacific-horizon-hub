@@ -125,11 +125,11 @@ function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {(folders ?? []).map((folder) => {
+            {folders.map((folder) => {
               const writable = canWrite(profile ?? null, folder);
-              // Root department folders have no individual owner in the mock data.
-              const renamable = canRenameFolder(profile ?? null, null);
-              const displayName = rootNames[folder.slug] ?? folder.name;
+              const renamable = canRenameFolder(profile ?? null, folder);
+              const displayName = folder.name;
+              const fileCount = totalFor(folder);
               return (
                 <Link
                   key={folder.id}
@@ -148,12 +148,14 @@ function Dashboard() {
                       {renamable && (
                         <FolderCardMenu
                           name={displayName}
-                          onRename={(next) => renameRootFolder(folder.slug, next)}
+                          onRename={(next) =>
+                            renameFolder.mutate({ target: folder, name: next })
+                          }
                           {...(isAdmin
                             ? {
                                 onDelete: () => removeFolder.mutateAsync(folder),
                                 deleting: removeFolder.isPending,
-                                deleteDescription: `"${displayName}" and all ${counts?.[folder.id] ?? 0} file(s) stored inside it will be permanently deleted. This cannot be undone.`,
+                                deleteDescription: `"${displayName}" and all ${fileCount} file(s) stored inside it will be permanently deleted. This cannot be undone.`,
                               }
                             : {})}
                         />
@@ -166,7 +168,8 @@ function Dashboard() {
                     {folder.description}
                   </p>
                   <div className="mt-4 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
-                    <span>{counts?.[folder.id] ?? 0} files</span>
+                    <span>{fileCount} files</span>
+
                     {writable && (
                       <span className="inline-flex items-center gap-1">
                         <Upload className="h-3.5 w-3.5" /> Upload enabled
