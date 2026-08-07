@@ -6,6 +6,8 @@ export interface PortalProfile {
   id: string;
   email: string;
   full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   department: string | null;
   role: AppRole;
 }
@@ -37,14 +39,35 @@ export async function fetchProfile(): Promise<PortalProfile | null> {
   const user = userData.user;
   if (!user) return null;
 
-  const [{ data: profile }, { data: roles }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, email, full_name, department")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase.from("user_roles").select("role").eq("user_id", user.id),
-  ]);
+  // first_name/last_name may not exist yet on older databases — fall back gracefully.
+  const withNames = await supabase
+    .from("profiles")
+    .select("id, email, full_name, department, first_name, last_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const base = withNames.error
+    ? await supabase
+        .from("profiles")
+        .select("id, email, full_name, department")
+        .eq("id", user.id)
+        .maybeSingle()
+    : withNames;
+
+  const { data: roles } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id);
+
+  const profile = base.data as
+    | {
+        email?: string | null;
+        full_name?: string | null;
+        department?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+      }
+    | null;
 
   const role: AppRole = (roles ?? []).some((r) => r.role === "super_admin")
     ? "super_admin"
@@ -54,9 +77,29 @@ export async function fetchProfile(): Promise<PortalProfile | null> {
     id: user.id,
     email: profile?.email ?? user.email ?? "",
     full_name: profile?.full_name ?? null,
+    first_name: profile?.first_name ?? null,
+    last_name: profile?.last_name ?? null,
     department: profile?.department ?? null,
     role,
   };
+}
+
+/** Full name for the header: First + Last, falling back to full_name / email. */
+export function displayName(profile: PortalProfile) {
+  const composed = [profile.first_name, profile.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return composed || profile.full_name || profile.email;
+}
+
+/** First name only, for the welcome banner. */
+export function firstNameOf(profile: PortalProfile) {
+  return (
+    profile.first_name?.trim() ||
+    profile.full_name?.trim().split(/\s+/)[0] ||
+    profile.email.split("@")[0]
+  );
 }
 
 export async function fetchFolders(): Promise<Folder[]> {
@@ -138,19 +181,24 @@ export async function uploadFile(
   if (uploadError) throw uploadError;
 
   onProgress?.(80);
-  const { error: insertError } = await supabase.from("files").insert({
-    folder_id: folder.id,
-    name: file.name,
-    size: file.size,
-    mime_type: file.type || null,
-    storage_path: path,
-    uploaded_by: userId,
-  });
+  const { data: inserted, error: insertError } = await supabase
+    .from("files")
+    .insert({
+      folder_id: folder.id,
+      name: file.name,
+      size: file.size,
+      mime_type: file.type || null,
+      storage_path: path,
+      uploaded_by: userId,
+    })
+    .select("id")
+    .single();
   if (insertError) {
     await supabase.storage.from(BUCKET).remove([path]);
     throw insertError;
   }
   onProgress?.(100);
+  return inserted?.id ?? null;
 }
 
 export async function downloadFile(file: PortalFile) {
@@ -271,6 +319,10 @@ export function formatDate(iso: string) {
 }
 
 export function initialsOf(profile: PortalProfile) {
-  const source = profile.full_name || profile.email;
+  const source = displayName(profile);
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length > 1) {
+    return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  }
   return source.slice(0, 2).toUpperCase();
 }

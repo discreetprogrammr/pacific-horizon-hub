@@ -247,3 +247,18 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 --      FROM public.profiles p JOIN public.user_roles r ON r.user_id = p.id
 --      ORDER BY r.role, p.email;
 -- =====================================================================
+
+-- =====================================================================
+-- 9. Profile name columns (first_name / last_name)  [idempotent]
+-- =====================================================================
+alter table public.profiles add column if not exists first_name text;
+alter table public.profiles add column if not exists last_name  text;
+
+-- Backfill from existing full_name where possible
+update public.profiles
+   set first_name = coalesce(first_name, split_part(full_name, ' ', 1)),
+       last_name  = coalesce(
+         last_name,
+         nullif(regexp_replace(full_name, '^\S+\s*', ''), '')
+       )
+ where full_name is not null;
