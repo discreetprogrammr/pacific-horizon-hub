@@ -302,8 +302,9 @@ function FolderBrowser() {
     );
   }
 
-  const folderName = rootNames[folder.slug] ?? folder.name;
-  const canRenameRoot = canRenameFolder(profile ?? null, null);
+  const folderName = folder.name;
+  const canRenameRoot = canRenameFolder(profile ?? null, folder);
+
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
