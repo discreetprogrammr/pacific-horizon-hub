@@ -53,9 +53,21 @@ function LoginPage() {
     });
     setLoading(false);
     if (signInError) {
-      setError("Invalid credentials. Access is limited to authorised accounts.");
+      const code = (signInError as { code?: string }).code;
+      if (code === "email_provider_disabled") {
+        setError(
+          "Email sign-in is currently disabled for this portal. Please contact the administrator.",
+        );
+      } else if (code === "email_not_confirmed") {
+        setError("This account has not been confirmed yet. Contact the administrator.");
+      } else if (signInError.message?.toLowerCase().includes("invalid login")) {
+        setError("Invalid credentials. Access is limited to authorised accounts.");
+      } else {
+        setError(signInError.message || "Unable to sign in. Please try again.");
+      }
       return;
     }
+
     navigate({ to: "/dashboard", replace: true });
   }
 
