@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   canWrite,
   deleteFolder,
+  firstNameOf,
   fetchFolderCounts,
   fetchFolders,
   fetchProfile,
