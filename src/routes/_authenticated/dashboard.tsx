@@ -6,20 +6,19 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  canRenameFolder,
   canWrite,
   deleteFolder,
+  fetchAllFolders,
   firstNameOf,
   fetchFolderCounts,
-  fetchFolders,
   fetchProfile,
+  renameFolderRow,
+  subtreeIds,
   type Folder,
 } from "@/lib/portal";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
-import {
-  canRenameFolder,
-  renameRootFolder,
-  useMockRootNames,
-} from "@/lib/mock-subfolders";
+
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
