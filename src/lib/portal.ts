@@ -334,17 +334,19 @@ export async function deleteFile(file: PortalFile) {
 }
 
 /**
- * Delete a department folder: removes its stored objects, then the folder row.
- * File metadata rows cascade away with the folder. RLS limits this to super admins.
+ * Delete a folder and everything beneath it. Sub-folder rows and file metadata
+ * cascade away in the database; stored objects are removed here.
  */
-export async function deleteFolder(folder: Folder) {
+export async function deleteFolder(folder: Folder, all: Folder[] = []) {
+  const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];
+
   const { data: rows, error: listError } = await supabase
     .from("files")
     .select("storage_path")
-    .eq("folder_id", folder.id);
+    .in("folder_id", ids);
   if (listError) throw listError;
 
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await db
     .from("folders")
     .delete()
     .eq("id", folder.id);
@@ -353,6 +355,7 @@ export async function deleteFolder(folder: Folder) {
   const paths = (rows ?? []).map((r) => r.storage_path);
   if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
 }
+
 
 
 function targetPath(folder: Folder, fileName: string) {
