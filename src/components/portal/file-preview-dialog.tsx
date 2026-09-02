@@ -75,16 +75,30 @@ export function FilePreviewDialog({ file, onOpenChange, onDownload }: FilePrevie
             <video src={url} controls className="max-h-[65vh] w-full" />
           ) : isAudio ? (
             <audio src={url} controls className="w-full p-6" />
+          ) : isPdf ? (
+            <iframe
+              src={url}
+              title={file?.name ?? "File preview"}
+              className="h-[65vh] w-full bg-background"
+              // No `sandbox` here on purpose: Chrome's built-in PDF viewer is
+              // implemented as an internal extension, and Chromium refuses to
+              // activate ANY extension inside a sandboxed iframe — tested this
+              // directly, every sandbox token combination blanks the PDF, even
+              // the most permissive one. PDFium already runs in its own
+              // browser-level sandboxed process independent of this attribute,
+              // and it can't execute arbitrary page script or navigate the tab
+              // the way a real HTML document could — that's what isHtml below
+              // guards against instead.
+              referrerPolicy="no-referrer"
+            />
           ) : canInline ? (
             <iframe
               src={url}
               title={file?.name ?? "File preview"}
               className="h-[65vh] w-full bg-background"
               // Empty sandbox: no script execution, no form submission, no
-              // top-level navigation, no popups. This iframe renders content
-              // someone else uploaded — it must not be able to act as that
-              // person, redirect the tab, or run anything. PDFs and plain
-              // text/JSON render fine under this; nothing here needs scripts.
+              // top-level navigation, no popups. Plain text/JSON render fine
+              // under this — confirmed directly — so there's no tradeoff here.
               sandbox=""
               referrerPolicy="no-referrer"
             />
