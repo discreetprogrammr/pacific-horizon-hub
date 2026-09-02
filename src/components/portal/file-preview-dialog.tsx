@@ -9,11 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  createPreviewUrl,
-  formatBytes,
-  type PortalFile,
-} from "@/lib/portal";
+import { createPreviewUrl, formatBytes, type PortalFile } from "@/lib/portal";
 
 interface FilePreviewDialogProps {
   file: PortalFile | null;
@@ -21,11 +17,7 @@ interface FilePreviewDialogProps {
   onDownload: (file: PortalFile) => void;
 }
 
-export function FilePreviewDialog({
-  file,
-  onOpenChange,
-  onDownload,
-}: FilePreviewDialogProps) {
+export function FilePreviewDialog({ file, onOpenChange, onDownload }: FilePreviewDialogProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +41,11 @@ export function FilePreviewDialog({
   const mime = file?.mime_type ?? "";
   const isImage = mime.startsWith("image/");
   const isPdf = mime === "application/pdf";
-  const isText = mime.startsWith("text/") || mime === "application/json";
+  // HTML (and XHTML) is deliberately excluded from inline preview: it's the one
+  // "text" type that can carry live script, and an iframe is the wrong place to
+  // run content from a file someone else uploaded. See isHtml below.
+  const isHtml = mime === "text/html" || mime === "application/xhtml+xml";
+  const isText = (mime.startsWith("text/") || mime === "application/json") && !isHtml;
   const isAudio = mime.startsWith("audio/");
   const isVideo = mime.startsWith("video/");
   const canInline = isImage || isPdf || isText || isAudio || isVideo;
@@ -84,12 +80,21 @@ export function FilePreviewDialog({
               src={url}
               title={file?.name ?? "File preview"}
               className="h-[65vh] w-full bg-background"
+              // Empty sandbox: no script execution, no form submission, no
+              // top-level navigation, no popups. This iframe renders content
+              // someone else uploaded — it must not be able to act as that
+              // person, redirect the tab, or run anything. PDFs and plain
+              // text/JSON render fine under this; nothing here needs scripts.
+              sandbox=""
+              referrerPolicy="no-referrer"
             />
           ) : (
             <div className="p-10 text-center">
               <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
               <p className="mt-3 text-sm text-muted-foreground">
-                This file type can't be previewed in the browser.
+                {isHtml
+                  ? "HTML files can't be previewed inline for security reasons — download it to view."
+                  : "This file type can't be previewed in the browser."}
               </p>
             </div>
           )}
@@ -103,16 +108,11 @@ export function FilePreviewDialog({
           >
             Open in new tab
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => file && onDownload(file)}
-            disabled={!file}
-          >
+          <Button variant="outline" onClick={() => file && onDownload(file)} disabled={!file}>
             <Download className="mr-2 h-4 w-4" />
             Download
           </Button>
         </div>
-
       </DialogContent>
     </Dialog>
   );
