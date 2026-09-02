@@ -1,5 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  copyObjectToFolder,
+  deleteObject,
+  deleteObjects,
+  moveObjectToFolder,
+  requestDownloadUrl,
+  requestUploadUrl,
+  restoreObjectToPath,
+} from "@/lib/r2-storage";
 
 /**
  * Folder rows carry columns (parent_id, owner_email, created_by) that the
@@ -43,8 +52,10 @@ export interface PortalFile {
   uploader_email?: string | null;
 }
 
-export const BUCKET = "company-files";
-
+// Object storage lives in Cloudflare R2 (see src/server/r2-storage.ts), not
+// Supabase Storage. The bucket name is a server-only env var; nothing here
+// needs it — every upload/download/copy/move/delete goes through a
+// permission-checked server function.
 
 export async function fetchProfile(): Promise<PortalProfile | null> {
   const { data: userData } = await supabase.auth.getUser();
@@ -66,20 +77,15 @@ export async function fetchProfile(): Promise<PortalProfile | null> {
         .maybeSingle()
     : withNames;
 
-  const { data: roles } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id);
+  const { data: roles } = await supabase.from("user_roles").select("role").eq("user_id", user.id);
 
-  const profile = base.data as
-    | {
-        email?: string | null;
-        full_name?: string | null;
-        department?: string | null;
-        first_name?: string | null;
-        last_name?: string | null;
-      }
-    | null;
+  const profile = base.data as {
+    email?: string | null;
+    full_name?: string | null;
+    department?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
+  } | null;
 
   const role: AppRole = (roles ?? []).some((r) => r.role === "super_admin")
     ? "super_admin"
@@ -98,10 +104,7 @@ export async function fetchProfile(): Promise<PortalProfile | null> {
 
 /** Full name for the header: First + Last, falling back to full_name / email. */
 export function displayName(profile: PortalProfile) {
-  const composed = [profile.first_name, profile.last_name]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
+  const composed = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
   return composed || profile.full_name || profile.email;
 }
 
@@ -119,10 +122,7 @@ const FOLDER_COLUMNS =
 
 /** Every folder the signed-in user may see, roots and sub-folders alike. */
 export async function fetchAllFolders(): Promise<Folder[]> {
-  const { data, error } = await db
-    .from("folders")
-    .select(FOLDER_COLUMNS)
-    .order("name");
+  const { data, error } = await db.from("folders").select(FOLDER_COLUMNS).order("name");
   if (error) throw error;
   return (data ?? []) as Folder[];
 }
@@ -212,30 +212,21 @@ export async function createSubfolder(
 }
 
 export async function renameFolderRow(folder: Folder, name: string) {
-  const { error } = await db
-    .from("folders")
-    .update({ name: name.trim() })
-    .eq("id", folder.id);
+  const { error } = await db.from("folders").update({ name: name.trim() }).eq("id", folder.id);
   if (error) throw error;
 }
 
 /** Super admins rename anything; creators rename the folders they made. */
-export function canRenameFolder(
-  profile: PortalProfile | null,
-  folder: Folder | null,
-) {
+export function canRenameFolder(profile: PortalProfile | null, folder: Folder | null) {
   if (!profile || !folder) return false;
   if (profile.role === "super_admin") return true;
   return !!folder.owner_email && folder.owner_email === profile.email;
 }
 
-
 export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
   const { data, error } = await supabase
     .from("files")
-    .select(
-      "id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at",
-    )
+    .select("id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at")
     .eq("folder_id", folderId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -249,9 +240,7 @@ export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
     .select("id, email, full_name")
     .in("id", uploaderIds);
 
-  const byId = new Map(
-    (people ?? []).map((p) => [p.id, p.full_name || p.email] as const),
-  );
+  const byId = new Map((people ?? []).map((p) => [p.id, p.full_name || p.email] as const));
   return rows.map((r) => ({ ...r, uploader_email: byId.get(r.uploaded_by) ?? "—" }));
 }
 
@@ -274,22 +263,49 @@ export function canWrite(profile: PortalProfile | null, folder: Folder | null) {
   return profile.role === "super_admin" || profile.department === folder.department;
 }
 
+/** PUTs a file straight to R2 via a presigned URL, reporting real upload progress. */
+function putWithProgress(
+  url: string,
+  file: File,
+  onProgress?: (pct: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        // Reserve the tail of the bar for the DB insert that follows.
+        onProgress?.(Math.round((event.loaded / event.total) * 80));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.send(file);
+  });
+}
+
 export async function uploadFile(
   folder: Folder,
   file: File,
   userId: string,
   onProgress?: (pct: number) => void,
 ) {
-  const safeName = file.name.replace(/[^\w.\-() ]+/g, "_");
-  const path = `${folder.slug}/${crypto.randomUUID()}-${safeName}`;
+  onProgress?.(5);
+  const { uploadUrl, storagePath } = await requestUploadUrl({
+    data: {
+      folderSlug: folder.slug,
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+    },
+  });
 
-  onProgress?.(15);
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, file, { contentType: file.type || "application/octet-stream" });
-  if (uploadError) throw uploadError;
+  await putWithProgress(uploadUrl, file, onProgress);
 
-  onProgress?.(80);
+  onProgress?.(90);
   const { data: inserted, error: insertError } = await supabase
     .from("files")
     .insert({
@@ -297,13 +313,15 @@ export async function uploadFile(
       name: file.name,
       size: file.size,
       mime_type: file.type || null,
-      storage_path: path,
+      storage_path: storagePath,
       uploaded_by: userId,
     })
     .select("id")
     .single();
   if (insertError) {
-    await supabase.storage.from(BUCKET).remove([path]);
+    await deleteObject({ data: { storagePath } }).catch(() => {
+      // best-effort cleanup; a stray object with no DB row is harmless
+    });
     throw insertError;
   }
   onProgress?.(100);
@@ -311,26 +329,24 @@ export async function uploadFile(
 }
 
 export async function downloadFile(file: PortalFile) {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(file.storage_path, 60, { download: file.name });
-  if (error || !data) throw error ?? new Error("Could not create download link");
-  window.open(data.signedUrl, "_blank", "noopener");
+  const { url } = await requestDownloadUrl({
+    data: { storagePath: file.storage_path, fileName: file.name, mode: "download" },
+  });
+  window.open(url, "_blank", "noopener");
 }
 
 /** Short-lived signed URL used to render a file inline in the preview modal. */
 export async function createPreviewUrl(file: PortalFile): Promise<string> {
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(file.storage_path, 300);
-  if (error || !data) throw error ?? new Error("Could not create preview link");
-  return data.signedUrl;
+  const { url } = await requestDownloadUrl({
+    data: { storagePath: file.storage_path, mode: "preview" },
+  });
+  return url;
 }
 
 export async function deleteFile(file: PortalFile) {
   const { error } = await supabase.from("files").delete().eq("id", file.id);
   if (error) throw error;
-  await supabase.storage.from(BUCKET).remove([file.storage_path]);
+  await deleteObject({ data: { storagePath: file.storage_path } });
 }
 
 /**
@@ -346,34 +362,22 @@ export async function deleteFolder(folder: Folder, all: Folder[] = []) {
     .in("folder_id", ids);
   if (listError) throw listError;
 
-  const { error: deleteError } = await db
-    .from("folders")
-    .delete()
-    .eq("id", folder.id);
+  const { error: deleteError } = await db.from("folders").delete().eq("id", folder.id);
   if (deleteError) throw deleteError;
 
   const paths = (rows ?? []).map((r) => r.storage_path);
-  if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
-}
-
-
-
-function targetPath(folder: Folder, fileName: string) {
-  const safeName = fileName.replace(/[^\w.\-() ]+/g, "_");
-  return `${folder.slug}/${crypto.randomUUID()}-${safeName}`;
+  if (paths.length) await deleteObjects({ data: { storagePaths: paths } });
 }
 
 /** Duplicate a file's storage object and metadata row into another folder. */
-export async function copyFileToFolder(
-  file: PortalFile,
-  target: Folder,
-  userId: string,
-) {
-  const path = targetPath(target, file.name);
-  const { error: copyError } = await supabase.storage
-    .from(BUCKET)
-    .copy(file.storage_path, path);
-  if (copyError) throw copyError;
+export async function copyFileToFolder(file: PortalFile, target: Folder, userId: string) {
+  const { storagePath } = await copyObjectToFolder({
+    data: {
+      sourcePath: file.storage_path,
+      destFolderSlug: target.slug,
+      fileName: file.name,
+    },
+  });
 
   const { data: inserted, error: insertError } = await supabase
     .from("files")
@@ -382,13 +386,15 @@ export async function copyFileToFolder(
       name: file.name,
       size: file.size,
       mime_type: file.mime_type,
-      storage_path: path,
+      storage_path: storagePath,
       uploaded_by: userId,
     })
     .select("id")
     .single();
   if (insertError) {
-    await supabase.storage.from(BUCKET).remove([path]);
+    await deleteObject({ data: { storagePath } }).catch(() => {
+      // best-effort cleanup; a stray object with no DB row is harmless
+    });
     throw insertError;
   }
   return inserted?.id as string | undefined;
@@ -397,23 +403,29 @@ export async function copyFileToFolder(
 /** Move a file's storage object and update its folder reference. */
 export async function moveFileToFolder(file: PortalFile, target: Folder) {
   if (file.folder_id === target.id) return;
-  const path = targetPath(target, file.name);
-  const { error: moveError } = await supabase.storage
-    .from(BUCKET)
-    .move(file.storage_path, path);
-  if (moveError) throw moveError;
+  const { storagePath } = await moveObjectToFolder({
+    data: {
+      sourcePath: file.storage_path,
+      destFolderSlug: target.slug,
+      fileName: file.name,
+    },
+  });
 
   const { error: updateError } = await supabase
     .from("files")
-    .update({ folder_id: target.id, storage_path: path })
+    .update({ folder_id: target.id, storage_path: storagePath })
     .eq("id", file.id);
   if (updateError) {
-    // roll the object back so metadata and storage stay in sync
-    await supabase.storage.from(BUCKET).move(path, file.storage_path);
+    // Roll the object back to its exact original key so it matches the
+    // `files` row, which was never updated since this write is what failed.
+    await restoreObjectToPath({
+      data: { currentPath: storagePath, restorePath: file.storage_path },
+    }).catch(() => {
+      // best-effort rollback; a briefly orphaned object is recoverable manually
+    });
     throw updateError;
   }
 }
-
 
 export function formatBytes(bytes: number) {
   if (!bytes) return "0 B";
