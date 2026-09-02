@@ -40,6 +40,17 @@ const DOWNLOAD_URL_TTL_SECONDS = 60;
 const PREVIEW_URL_TTL_SECONDS = 300;
 const DELETE_BATCH_SIZE = 1000; // R2/S3 DeleteObjects hard limit per call
 
+// Per-file upload cap. This guards against accidental huge uploads (a
+// multi-GB file dragged in by mistake hanging a browser tab, or quietly
+// running up storage cost) — it is not a hard adversarial limit, since the
+// size below comes from the client's own report of the file it's sending.
+// A department user can already upload freely within their department, so
+// that trust boundary isn't new; this just keeps mistakes cheap. Exported so
+// both the client-side check (src/lib/portal.ts) and this server-side check
+// use one shared number.
+export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024; // 500 MB
+export const MAX_UPLOAD_LABEL = "500 MB";
+
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -129,11 +140,15 @@ export const requestUploadUrl = createServerFn({ method: "POST" })
         folderSlug: z.string().min(1),
         fileName: z.string().min(1),
         contentType: z.string().optional(),
+        fileSize: z.number().positive(),
       })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
     await assertSlugAccess(context.supabase, data.folderSlug);
+    if (data.fileSize > MAX_UPLOAD_BYTES) {
+      throw new Error(`File is too large. The maximum upload size is ${MAX_UPLOAD_LABEL}.`);
+    }
     const storagePath = buildObjectKey(data.folderSlug, data.fileName);
     const uploadUrl = await getSignedUrl(
       r2(),

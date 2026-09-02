@@ -4,6 +4,8 @@ import {
   copyObjectToFolder,
   deleteObject,
   deleteObjects,
+  MAX_UPLOAD_BYTES,
+  MAX_UPLOAD_LABEL,
   moveObjectToFolder,
   requestDownloadUrl,
   requestUploadUrl,
@@ -294,12 +296,19 @@ export async function uploadFile(
   userId: string,
   onProgress?: (pct: number) => void,
 ) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `"${file.name}" is ${formatBytes(file.size)} — the maximum upload size is ${MAX_UPLOAD_LABEL}.`,
+    );
+  }
+
   onProgress?.(5);
   const { uploadUrl, storagePath } = await requestUploadUrl({
     data: {
       folderSlug: folder.slug,
       fileName: file.name,
       contentType: file.type || "application/octet-stream",
+      fileSize: file.size,
     },
   });
 
