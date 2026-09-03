@@ -21,8 +21,6 @@ import { ThemeToggle } from "@/components/portal/theme-toggle";
 import { useTheme } from "@/hooks/use-theme";
 import { displayName, initialsOf, type PortalProfile } from "@/lib/portal";
 
-const LOGO_URL = "/pacific-horizon-tek-logo.png";
-
 export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -40,16 +38,6 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur-md">
       <SidebarTrigger />
-
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="flex h-12 items-center rounded-lg bg-white px-3 shadow-sm ring-1 ring-border">
-          <img
-            src={LOGO_URL}
-            alt="Pacific Horizon Tek Inc."
-            className="h-10 w-auto object-contain"
-          />
-        </span>
-      </div>
 
       <div className="ml-auto flex items-center gap-3">
         {profile && (

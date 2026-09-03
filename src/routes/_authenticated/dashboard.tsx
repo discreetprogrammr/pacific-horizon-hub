@@ -97,11 +97,11 @@ function Dashboard() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
-      <section className="brand-gradient relative overflow-hidden rounded-2xl px-6 py-8 text-primary-foreground shadow-[var(--shadow-elevated)]">
+      <section className="brand-gradient relative overflow-hidden rounded-2xl px-6 py-8 text-gradient-brand-foreground shadow-[var(--shadow-elevated)]">
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
           Welcome back{profile ? `, ${firstNameOf(profile)}!` : ""}
         </h1>
-        <p className="mt-2 max-w-xl text-sm text-primary-foreground/80">
+        <p className="mt-2 max-w-xl text-sm text-gradient-brand-foreground/80">
           Your secure workspace for company documents. Every file is encrypted at rest and delivered
           through short-lived signed links.
         </p>
@@ -159,7 +159,7 @@ function Dashboard() {
                   className="glass-card group flex flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
                 >
                   <div className="flex items-start justify-between">
-                    <span className="brand-gradient inline-flex h-11 w-11 items-center justify-center rounded-xl text-primary-foreground">
+                    <span className="brand-gradient inline-flex h-11 w-11 items-center justify-center rounded-xl text-gradient-brand-foreground">
                       <FolderClosed className="h-5 w-5" />
                     </span>
                     <div className="flex items-center gap-1">
@@ -232,7 +232,7 @@ function Dashboard() {
                     >
                       <TableCell className="font-medium">
                         <span className="flex items-center gap-3">
-                          <span className="brand-gradient inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-foreground">
+                          <span className="brand-gradient inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gradient-brand-foreground">
                             <FolderClosed className="h-4 w-4" />
                           </span>
                           <span className="min-w-0">

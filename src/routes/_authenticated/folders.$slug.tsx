@@ -483,7 +483,7 @@ function FolderBrowser() {
                 className="glass-card flex cursor-pointer flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
               >
                 <div className="flex items-start justify-between">
-                  <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
+                  <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-gradient-brand-foreground">
                     <FolderClosed className="h-5 w-5" />
                   </span>
                   {canRenameFolder(profile ?? null, sub) && (
@@ -530,7 +530,7 @@ function FolderBrowser() {
                   >
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-3">
-                        <span className="brand-gradient inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-foreground">
+                        <span className="brand-gradient inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gradient-brand-foreground">
                           <FolderClosed className="h-4 w-4" />
                         </span>
                         <span className="truncate">{sub.name}</span>
