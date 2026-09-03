@@ -1,4 +1,3 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import {
   copyObjectToFolder,
@@ -11,13 +10,6 @@ import {
   requestUploadUrl,
   restoreObjectToPath,
 } from "@/lib/r2-storage";
-
-/**
- * Folder rows carry columns (parent_id, owner_email, created_by) that the
- * generated types do not know about yet, so folder queries go through a
- * loosely typed view of the same client.
- */
-const db = supabase as unknown as SupabaseClient;
 
 export type AppRole = "super_admin" | "department_user";
 
@@ -128,7 +120,7 @@ const FOLDER_COLUMNS =
 
 /** Every non-deleted folder the signed-in user may see, roots and sub-folders alike. */
 export async function fetchAllFolders(): Promise<Folder[]> {
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("folders")
     .select(FOLDER_COLUMNS)
     .is("deleted_at", null)
@@ -145,7 +137,7 @@ export async function fetchAllFolders(): Promise<Folder[]> {
  * subtreeIds() during a restore.
  */
 export async function fetchAllFoldersIncludingDeleted(): Promise<Folder[]> {
-  const { data, error } = await db.from("folders").select(FOLDER_COLUMNS).order("name");
+  const { data, error } = await supabase.from("folders").select(FOLDER_COLUMNS).order("name");
   if (error) throw error;
   return (data ?? []) as Folder[];
 }
@@ -157,7 +149,7 @@ export async function fetchFolders(): Promise<Folder[]> {
 }
 
 export async function fetchFolderBySlug(slug: string): Promise<Folder | null> {
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("folders")
     .select(FOLDER_COLUMNS)
     .eq("slug", slug)
@@ -169,7 +161,7 @@ export async function fetchFolderBySlug(slug: string): Promise<Folder | null> {
 
 /** Folders currently in the recycle bin, most recently deleted first. */
 export async function fetchDeletedFolders(): Promise<Folder[]> {
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("folders")
     .select(FOLDER_COLUMNS)
     .not("deleted_at", "is", null)
@@ -229,7 +221,7 @@ export async function createSubfolder(
   profile: PortalProfile,
 ): Promise<Folder> {
   const trimmed = name.trim();
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("folders")
     .insert({
       name: trimmed,
@@ -247,7 +239,10 @@ export async function createSubfolder(
 }
 
 export async function renameFolderRow(folder: Folder, name: string) {
-  const { error } = await db.from("folders").update({ name: name.trim() }).eq("id", folder.id);
+  const { error } = await supabase
+    .from("folders")
+    .update({ name: name.trim() })
+    .eq("id", folder.id);
   if (error) throw error;
 }
 
@@ -262,7 +257,7 @@ const FILE_COLUMNS =
   "id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at, deleted_at, deleted_by";
 
 export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("files")
     .select(FILE_COLUMNS)
     .eq("folder_id", folderId)
@@ -285,7 +280,7 @@ export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
 
 /** Files currently in the recycle bin, most recently deleted first. */
 export async function fetchDeletedFiles(): Promise<PortalFile[]> {
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("files")
     .select(FILE_COLUMNS)
     .not("deleted_at", "is", null)
@@ -296,7 +291,7 @@ export async function fetchDeletedFiles(): Promise<PortalFile[]> {
 
 export async function fetchFolderCounts(folderIds: string[]) {
   if (folderIds.length === 0) return {} as Record<string, number>;
-  const { data, error } = await db
+  const { data, error } = await supabase
     .from("files")
     .select("folder_id")
     .in("folder_id", folderIds)
@@ -403,7 +398,7 @@ export async function createPreviewUrl(file: PortalFile): Promise<string> {
 
 /** Moves a file to the recycle bin. Reversible — see restoreFile. */
 export async function softDeleteFile(file: PortalFile, userId: string) {
-  const { error } = await db
+  const { error } = await supabase
     .from("files")
     .update({ deleted_at: new Date().toISOString(), deleted_by: userId })
     .eq("id", file.id);
@@ -412,7 +407,7 @@ export async function softDeleteFile(file: PortalFile, userId: string) {
 
 /** Restores a file out of the recycle bin. */
 export async function restoreFile(file: PortalFile) {
-  const { error } = await db
+  const { error } = await supabase
     .from("files")
     .update({ deleted_at: null, deleted_by: null })
     .eq("id", file.id);
@@ -429,13 +424,13 @@ export async function softDeleteFolder(folder: Folder, all: Folder[], userId: st
   const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];
   const now = new Date().toISOString();
 
-  const { error: foldersError } = await db
+  const { error: foldersError } = await supabase
     .from("folders")
     .update({ deleted_at: now, deleted_by: userId })
     .in("id", ids);
   if (foldersError) throw foldersError;
 
-  const { error: filesError } = await db
+  const { error: filesError } = await supabase
     .from("files")
     .update({ deleted_at: now, deleted_by: userId })
     .in("folder_id", ids);
@@ -451,13 +446,13 @@ export async function softDeleteFolder(folder: Folder, all: Folder[], userId: st
 export async function restoreFolder(folder: Folder, all: Folder[]) {
   const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];
 
-  const { error: foldersError } = await db
+  const { error: foldersError } = await supabase
     .from("folders")
     .update({ deleted_at: null, deleted_by: null })
     .in("id", ids);
   if (foldersError) throw foldersError;
 
-  const { error: filesError } = await db
+  const { error: filesError } = await supabase
     .from("files")
     .update({ deleted_at: null, deleted_by: null })
     .in("folder_id", ids);
@@ -485,7 +480,7 @@ export async function deleteFolder(folder: Folder, all: Folder[] = []) {
     .in("folder_id", ids);
   if (listError) throw listError;
 
-  const { error: deleteError } = await db.from("folders").delete().eq("id", folder.id);
+  const { error: deleteError } = await supabase.from("folders").delete().eq("id", folder.id);
   if (deleteError) throw deleteError;
 
   const paths = (rows ?? []).map((r) => r.storage_path);

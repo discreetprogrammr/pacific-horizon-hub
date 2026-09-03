@@ -14,9 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_audit_log: {
+        Row: {
+          action: string
+          created_at: string
+          id: string
+          metadata: Json
+          record_id: string | null
+          table_name: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          record_id?: string | null
+          table_name: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          record_id?: string | null
+          table_name?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       files: {
         Row: {
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           folder_id: string
           id: string
           mime_type: string | null
@@ -27,6 +59,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           folder_id: string
           id?: string
           mime_type?: string | null
@@ -37,6 +71,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           folder_id?: string
           id?: string
           mime_type?: string | null
@@ -58,51 +94,80 @@ export type Database = {
       folders: {
         Row: {
           created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           department: string
           description: string | null
           id: string
           name: string
+          owner_email: string | null
+          parent_id: string | null
           slug: string
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           department: string
           description?: string | null
           id?: string
           name: string
+          owner_email?: string | null
+          parent_id?: string | null
           slug: string
         }
         Update: {
           created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           department?: string
           description?: string | null
           id?: string
           name?: string
+          owner_email?: string | null
+          parent_id?: string | null
           slug?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "folders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
           created_at: string
           department: string | null
           email: string
+          first_name: string | null
           full_name: string | null
           id: string
+          last_name: string | null
         }
         Insert: {
           created_at?: string
           department?: string | null
           email: string
+          first_name?: string | null
           full_name?: string | null
           id: string
+          last_name?: string | null
         }
         Update: {
           created_at?: string
           department?: string | null
           email?: string
+          first_name?: string | null
           full_name?: string | null
           id?: string
+          last_name?: string | null
         }
         Relationships: []
       }
