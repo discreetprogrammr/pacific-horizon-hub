@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ChangePasswordDialog } from "@/components/portal/change-password-dialog";
+import { PortalSearch } from "@/components/portal/portal-search";
 import { ThemeToggle } from "@/components/portal/theme-toggle";
 import { useTheme } from "@/hooks/use-theme";
 import { displayName, initialsOf, type PortalProfile } from "@/lib/portal";
@@ -38,6 +39,10 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur-md">
       <SidebarTrigger />
+
+      <div className="flex flex-1 justify-center px-2">
+        <PortalSearch />
+      </div>
 
       <div className="ml-auto flex items-center gap-3">
         {profile && (

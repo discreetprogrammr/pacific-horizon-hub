@@ -188,6 +188,15 @@ export function pathOf(all: Folder[], id: string | null): Folder[] {
   return trail;
 }
 
+/** Walks up the parent chain to the top-level (department) folder that owns `id`. */
+export function rootAncestorOf(all: Folder[], id: string): Folder | null {
+  let current = all.find((f) => f.id === id) ?? null;
+  while (current && current.parent_id !== null) {
+    current = all.find((f) => f.id === current!.parent_id) ?? null;
+  }
+  return current;
+}
+
 /** The folder itself plus every descendant beneath it. */
 export function subtreeIds(all: Folder[], id: string): string[] {
   const ids = new Set<string>([id]);
@@ -276,6 +285,33 @@ export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
 
   const byId = new Map((people ?? []).map((p) => [p.id, p.full_name || p.email] as const));
   return rows.map((r) => ({ ...r, uploader_email: byId.get(r.uploaded_by) ?? "—" }));
+}
+
+function escapeLikePattern(value: string): string {
+  // ILIKE treats %, _ and \ as pattern syntax — escape anything a user types
+  // that happens to collide with it, so a search for "50%" or "invoice_v2"
+  // matches literally instead of being read as a wildcard.
+  return value.replace(/[%_\\]/g, (match) => `\\${match}`);
+}
+
+/**
+ * Files whose name matches `query` (case-insensitive substring), across
+ * every folder the signed-in user can see — not scoped to one folder_id, so
+ * this relies entirely on the "Read permitted files" RLS policy to keep
+ * results limited to what the caller is actually allowed to read.
+ */
+export async function searchFiles(query: string, limit = 8): Promise<PortalFile[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { data, error } = await supabase
+    .from("files")
+    .select(FILE_COLUMNS)
+    .ilike("name", `%${escapeLikePattern(q)}%`)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as PortalFile[];
 }
 
 /** Files currently in the recycle bin, most recently deleted first. */

@@ -74,7 +74,23 @@ import {
   type PortalFile,
 } from "@/lib/portal";
 
+interface FolderBrowserSearch {
+  /** Nested sub-folder id to jump straight into — client-side browsing state otherwise isn't part of the URL at all. */
+  open?: string;
+  /** Pre-fills this folder's own file search box. */
+  q?: string;
+}
+
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
+  // Both optional and both left out entirely on a plain navigation, so
+  // existing <Link>/navigate calls elsewhere in the app don't need to
+  // change — only the portal search box (portal-search.tsx) sets them.
+  validateSearch: (search: Record<string, unknown>): FolderBrowserSearch => {
+    const result: FolderBrowserSearch = {};
+    if (typeof search["open"] === "string") result.open = search["open"];
+    if (typeof search["q"] === "string") result.q = search["q"];
+    return result;
+  },
   head: () => ({
     meta: [
       { title: "Files | Pacific Horizon Tek Portal" },
@@ -95,17 +111,22 @@ export const Route = createFileRoute("/_authenticated/folders/$slug")({
 
 function FolderBrowser() {
   const { slug } = useParams({ from: "/_authenticated/folders/$slug" });
+  const search = Route.useSearch();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
-  const [currentId, setCurrentId] = useState<string | null>(null);
+  // Seeded from the `open` search param when arriving via the portal search
+  // box (see portal-search.tsx); plain navigation here leaves it undefined
+  // and this behaves exactly as before.
+  const [currentId, setCurrentId] = useState<string | null>(() => search.open ?? null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [previewFile, setPreviewFile] = useState<PortalFile | null>(null);
   const [viewMode, setViewMode] = useViewMode();
-  const [fileQuery, setFileQuery] = useState("");
+  // Same idea via the `q` param, pre-filling this folder's own file search.
+  const [fileQuery, setFileQuery] = useState(() => search.q ?? "");
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: allFolders, isLoading: folderLoading } = useQuery({
@@ -123,7 +144,18 @@ function FolderBrowser() {
   const trail = pathOf(folders, activeFolder?.id ?? null);
   const visibleSubfolders = activeFolder ? childrenOf(folders, activeFolder.id) : [];
 
+  // Resets the open sub-folder when the route's slug actually changes to a
+  // different top-level folder. Compares against the previous slug rather
+  // than using a one-shot "first run" flag: this app's client entry renders
+  // inside React StrictMode, which intentionally invokes effects twice on
+  // mount in development, and a one-shot flag would treat that second
+  // invocation as "a change" and wipe out a deep-linked `open` param before
+  // it's ever seen. Comparing values instead makes the guard a no-op no
+  // matter how many times it happens to run with the same slug.
+  const prevSlugRef = useRef(slug);
   useEffect(() => {
+    if (prevSlugRef.current === slug) return;
+    prevSlugRef.current = slug;
     setCurrentId(null);
   }, [slug]);
 
@@ -140,9 +172,24 @@ function FolderBrowser() {
     enabled: !!activeFolder?.id,
   });
 
-  // Clear a stale search when moving to a different folder, so its files
-  // aren't hidden behind text that was typed for somewhere else.
+  // Clears a stale search when moving to a different folder, so its files
+  // aren't hidden behind text that was typed for somewhere else. Compares
+  // against the previously-resolved folder id rather than a one-shot flag
+  // (same StrictMode reasoning as the slug effect above — and the case that
+  // actually matters here, since the portal search box already warms the
+  // folders cache before a click, so `activeFolder` is often resolved
+  // synchronously on the very first render, not after a loading delay). The
+  // very first resolution must not count as a change, or it would wipe out
+  // a `q` param deep-linked from the portal search box before it's ever seen.
+  const prevActiveFolderIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
+    if (!activeFolder?.id) return;
+    if (prevActiveFolderIdRef.current === undefined) {
+      prevActiveFolderIdRef.current = activeFolder.id;
+      return;
+    }
+    if (prevActiveFolderIdRef.current === activeFolder.id) return;
+    prevActiveFolderIdRef.current = activeFolder.id;
     setFileQuery("");
   }, [activeFolder?.id]);
 
