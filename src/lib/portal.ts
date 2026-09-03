@@ -40,6 +40,8 @@ export interface Folder {
   parent_id: string | null;
   owner_email: string | null;
   created_by: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
 }
 
 export interface PortalFile {
@@ -52,6 +54,8 @@ export interface PortalFile {
   uploaded_by: string;
   created_at: string;
   uploader_email?: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
 }
 
 // Object storage lives in Cloudflare R2 (see src/server/r2-storage.ts), not
@@ -120,10 +124,27 @@ export function firstNameOf(profile: PortalProfile) {
 }
 
 const FOLDER_COLUMNS =
-  "id, slug, name, description, department, parent_id, owner_email, created_by";
+  "id, slug, name, description, department, parent_id, owner_email, created_by, deleted_at, deleted_by";
 
-/** Every folder the signed-in user may see, roots and sub-folders alike. */
+/** Every non-deleted folder the signed-in user may see, roots and sub-folders alike. */
 export async function fetchAllFolders(): Promise<Folder[]> {
+  const { data, error } = await db
+    .from("folders")
+    .select(FOLDER_COLUMNS)
+    .is("deleted_at", null)
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as Folder[];
+}
+
+/**
+ * Every folder regardless of deletion state. Needed to walk a subtree
+ * correctly when soft-deleting or restoring a folder — the filtered list
+ * above hides deleted folders, which would otherwise make an
+ * already-deleted parent's still-deleted children invisible to
+ * subtreeIds() during a restore.
+ */
+export async function fetchAllFoldersIncludingDeleted(): Promise<Folder[]> {
   const { data, error } = await db.from("folders").select(FOLDER_COLUMNS).order("name");
   if (error) throw error;
   return (data ?? []) as Folder[];
@@ -140,9 +161,21 @@ export async function fetchFolderBySlug(slug: string): Promise<Folder | null> {
     .from("folders")
     .select(FOLDER_COLUMNS)
     .eq("slug", slug)
+    .is("deleted_at", null)
     .maybeSingle();
   if (error) throw error;
   return (data as Folder | null) ?? null;
+}
+
+/** Folders currently in the recycle bin, most recently deleted first. */
+export async function fetchDeletedFolders(): Promise<Folder[]> {
+  const { data, error } = await db
+    .from("folders")
+    .select(FOLDER_COLUMNS)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as Folder[];
 }
 
 /* ------------------------- hierarchy helpers ------------------------- */
@@ -225,11 +258,15 @@ export function canRenameFolder(profile: PortalProfile | null, folder: Folder | 
   return !!folder.owner_email && folder.owner_email === profile.email;
 }
 
+const FILE_COLUMNS =
+  "id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at, deleted_at, deleted_by";
+
 export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("files")
-    .select("id, folder_id, name, size, mime_type, storage_path, uploaded_by, created_at")
+    .select(FILE_COLUMNS)
     .eq("folder_id", folderId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
   if (error) throw error;
   const rows = (data ?? []) as PortalFile[];
@@ -246,12 +283,24 @@ export async function fetchFiles(folderId: string): Promise<PortalFile[]> {
   return rows.map((r) => ({ ...r, uploader_email: byId.get(r.uploaded_by) ?? "—" }));
 }
 
+/** Files currently in the recycle bin, most recently deleted first. */
+export async function fetchDeletedFiles(): Promise<PortalFile[]> {
+  const { data, error } = await db
+    .from("files")
+    .select(FILE_COLUMNS)
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PortalFile[];
+}
+
 export async function fetchFolderCounts(folderIds: string[]) {
   if (folderIds.length === 0) return {} as Record<string, number>;
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("files")
     .select("folder_id")
-    .in("folder_id", folderIds);
+    .in("folder_id", folderIds)
+    .is("deleted_at", null);
   if (error) throw error;
   const counts: Record<string, number> = {};
   for (const row of data ?? []) {
@@ -352,6 +401,70 @@ export async function createPreviewUrl(file: PortalFile): Promise<string> {
   return url;
 }
 
+/** Moves a file to the recycle bin. Reversible — see restoreFile. */
+export async function softDeleteFile(file: PortalFile, userId: string) {
+  const { error } = await db
+    .from("files")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: userId })
+    .eq("id", file.id);
+  if (error) throw error;
+}
+
+/** Restores a file out of the recycle bin. */
+export async function restoreFile(file: PortalFile) {
+  const { error } = await db
+    .from("files")
+    .update({ deleted_at: null, deleted_by: null })
+    .eq("id", file.id);
+  if (error) throw error;
+}
+
+/**
+ * Moves a folder and everything beneath it — sub-folders and files alike —
+ * to the recycle bin. `all` must include already-deleted folders
+ * (fetchAllFoldersIncludingDeleted) so a folder that's already partly in
+ * the trash is still walked correctly. Reversible — see restoreFolder.
+ */
+export async function softDeleteFolder(folder: Folder, all: Folder[], userId: string) {
+  const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];
+  const now = new Date().toISOString();
+
+  const { error: foldersError } = await db
+    .from("folders")
+    .update({ deleted_at: now, deleted_by: userId })
+    .in("id", ids);
+  if (foldersError) throw foldersError;
+
+  const { error: filesError } = await db
+    .from("files")
+    .update({ deleted_at: now, deleted_by: userId })
+    .in("folder_id", ids);
+  if (filesError) throw filesError;
+}
+
+/**
+ * Restores a folder and its whole subtree out of the recycle bin, along
+ * with every file inside it — including files that were deleted on their
+ * own, before the folder was. `all` should come from
+ * fetchAllFoldersIncludingDeleted so the subtree walk sees deleted folders too.
+ */
+export async function restoreFolder(folder: Folder, all: Folder[]) {
+  const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];
+
+  const { error: foldersError } = await db
+    .from("folders")
+    .update({ deleted_at: null, deleted_by: null })
+    .in("id", ids);
+  if (foldersError) throw foldersError;
+
+  const { error: filesError } = await db
+    .from("files")
+    .update({ deleted_at: null, deleted_by: null })
+    .in("folder_id", ids);
+  if (filesError) throw filesError;
+}
+
+/** Permanently deletes a file — the "Delete forever" action in the recycle bin. */
 export async function deleteFile(file: PortalFile) {
   const { error } = await supabase.from("files").delete().eq("id", file.id);
   if (error) throw error;
@@ -359,8 +472,9 @@ export async function deleteFile(file: PortalFile) {
 }
 
 /**
- * Delete a folder and everything beneath it. Sub-folder rows and file metadata
- * cascade away in the database; stored objects are removed here.
+ * Permanently deletes a folder and everything beneath it — the
+ * "Delete forever" action in the recycle bin. Sub-folder rows and file
+ * metadata cascade away in the database; stored objects are removed here.
  */
 export async function deleteFolder(folder: Folder, all: Folder[] = []) {
   const ids = all.length ? subtreeIds(all, folder.id) : [folder.id];

@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   canRenameFolder,
   canWrite,
-  deleteFolder,
+  softDeleteFolder,
   fetchAllFolders,
   firstNameOf,
   fetchFolderCounts,
@@ -18,7 +18,6 @@ import {
   type Folder,
 } from "@/lib/portal";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
-
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -62,14 +61,16 @@ function Dashboard() {
   const isAdmin = profile?.role === "super_admin";
 
   const removeFolder = useMutation({
-    mutationFn: (folder: Folder) => deleteFolder(folder, all),
+    mutationFn: (folder: Folder) => {
+      if (!profile) throw new Error("Your session has expired — sign in again");
+      return softDeleteFolder(folder, all, profile.id);
+    },
     onSuccess: () => {
-      toast.success("Folder deleted");
+      toast.success("Folder moved to Recently Deleted");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not delete this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not delete this folder"),
   });
 
   const renameFolder = useMutation({
@@ -79,11 +80,8 @@ function Dashboard() {
       toast.success("Folder renamed");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not rename this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not rename this folder"),
   });
-
-
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-8">
@@ -92,8 +90,8 @@ function Dashboard() {
           Welcome back{profile ? `, ${firstNameOf(profile)}!` : ""}
         </h1>
         <p className="mt-2 max-w-xl text-sm text-primary-foreground/80">
-          Your secure workspace for company documents. Every file is encrypted at rest
-          and delivered through short-lived signed links.
+          Your secure workspace for company documents. Every file is encrypted at rest and delivered
+          through short-lived signed links.
         </p>
         <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1">
@@ -148,19 +146,16 @@ function Dashboard() {
                       {renamable && (
                         <FolderCardMenu
                           name={displayName}
-                          onRename={(next) =>
-                            renameFolder.mutate({ target: folder, name: next })
-                          }
+                          onRename={(next) => renameFolder.mutate({ target: folder, name: next })}
                           {...(isAdmin
                             ? {
                                 onDelete: () => removeFolder.mutateAsync(folder),
                                 deleting: removeFolder.isPending,
-                                deleteDescription: `"${displayName}" and all ${fileCount} file(s) stored inside it will be permanently deleted. This cannot be undone.`,
+                                deleteDescription: `"${displayName}" and all ${fileCount} file(s) stored inside it will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`,
                               }
                             : {})}
                         />
                       )}
-
                     </div>
                   </div>
                   <h3 className="mt-4 font-semibold tracking-tight">{displayName}</h3>

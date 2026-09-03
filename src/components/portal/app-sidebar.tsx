@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { FolderClosed, LayoutGrid, ShieldCheck } from "lucide-react";
+import { FolderClosed, LayoutGrid, ShieldCheck, Trash2 } from "lucide-react";
 
 import {
   Sidebar,
@@ -71,6 +71,16 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {profile?.role === "super_admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname === "/trash"}>
+                    <Link to="/trash" className="flex items-center gap-2">
+                      <Trash2 className="h-4 w-4" />
+                      {!collapsed && <span>Recently Deleted</span>}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -81,10 +91,7 @@ export function AppSidebar({ folders, profile }: AppSidebarProps) {
             <SidebarMenu>
               {folders.map((folder) => (
                 <SidebarMenuItem key={folder.id}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname === `/folders/${folder.slug}`}
-                  >
+                  <SidebarMenuButton asChild isActive={pathname === `/folders/${folder.slug}`}>
                     <Link
                       to="/folders/$slug"
                       params={{ slug: folder.slug }}

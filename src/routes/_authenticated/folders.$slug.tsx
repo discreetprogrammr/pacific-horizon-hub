@@ -55,8 +55,8 @@ import {
   childrenOf,
   copyFileToFolder,
   createSubfolder,
-  deleteFile,
-  deleteFolder,
+  softDeleteFile,
+  softDeleteFolder,
   downloadFile,
   fetchAllFolders,
   fetchFiles,
@@ -70,9 +70,6 @@ import {
   type Folder,
   type PortalFile,
 } from "@/lib/portal";
-
-
-
 
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
   head: () => ({
@@ -93,7 +90,6 @@ export const Route = createFileRoute("/_authenticated/folders/$slug")({
   component: FolderBrowser,
 });
 
-
 function FolderBrowser() {
   const { slug } = useParams({ from: "/_authenticated/folders/$slug" });
   const navigate = useNavigate();
@@ -105,7 +101,6 @@ function FolderBrowser() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [previewFile, setPreviewFile] = useState<PortalFile | null>(null);
-
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: allFolders, isLoading: folderLoading } = useQuery({
@@ -121,9 +116,7 @@ function FolderBrowser() {
     (currentId ? folders.find((f) => f.id === currentId) : folder) ?? folder;
 
   const trail = pathOf(folders, activeFolder?.id ?? null);
-  const visibleSubfolders = activeFolder
-    ? childrenOf(folders, activeFolder.id)
-    : [];
+  const visibleSubfolders = activeFolder ? childrenOf(folders, activeFolder.id) : [];
 
   useEffect(() => {
     setCurrentId(null);
@@ -169,9 +162,12 @@ function FolderBrowser() {
   });
 
   const remove = useMutation({
-    mutationFn: (file: PortalFile) => deleteFile(file),
+    mutationFn: (file: PortalFile) => {
+      if (!profile) throw new Error("Your session has expired — sign in again");
+      return softDeleteFile(file, profile.id);
+    },
     onSuccess: () => {
-      toast.success("File deleted");
+      toast.success("File moved to Recently Deleted");
       queryClient.invalidateQueries({ queryKey: ["files", activeFolder?.id] });
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
@@ -206,23 +202,22 @@ function FolderBrowser() {
       }
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not complete that action"),
+    onError: (error: Error) => toast.error(error.message || "Could not complete that action"),
   });
 
   const removeFolder = useMutation({
     mutationFn: async () => {
       if (!folder) throw new Error("Folder unavailable");
-      await deleteFolder(folder, folders);
+      if (!profile) throw new Error("Your session has expired — sign in again");
+      await softDeleteFolder(folder, folders, profile.id);
     },
     onSuccess: () => {
-      toast.success("Folder deleted");
+      toast.success("Folder moved to Recently Deleted");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
       navigate({ to: "/dashboard", replace: true });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not delete this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not delete this folder"),
   });
 
   const renameFolder = useMutation({
@@ -232,20 +227,21 @@ function FolderBrowser() {
       toast.success("Folder renamed");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not rename this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not rename this folder"),
   });
 
   const removeSubfolder = useMutation({
-    mutationFn: (target: Folder) => deleteFolder(target, folders),
+    mutationFn: (target: Folder) => {
+      if (!profile) throw new Error("Your session has expired — sign in again");
+      return softDeleteFolder(target, folders, profile.id);
+    },
     onSuccess: () => {
-      toast.success("Folder deleted");
+      toast.success("Folder moved to Recently Deleted");
       queryClient.invalidateQueries({ queryKey: ["folders"] });
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
       queryClient.invalidateQueries({ queryKey: ["files"] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not delete this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not delete this folder"),
   });
 
   const createFolder = useMutation({
@@ -260,8 +256,7 @@ function FolderBrowser() {
       toast.success(`Folder "${created.name}" created`);
       queryClient.invalidateQueries({ queryKey: ["folders"] });
     },
-    onError: (error: Error) =>
-      toast.error(error.message || "Could not create this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not create this folder"),
   });
 
   async function handleDownload(file: PortalFile) {
@@ -281,9 +276,7 @@ function FolderBrowser() {
     createFolder.mutate(name);
   }
 
-
   if (folderLoading) {
-
     return <Skeleton className="mx-auto h-64 w-full max-w-6xl rounded-2xl" />;
   }
 
@@ -304,7 +297,6 @@ function FolderBrowser() {
 
   const folderName = folder.name;
   const canRenameRoot = canRenameFolder(profile ?? null, folder);
-
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
@@ -354,7 +346,6 @@ function FolderBrowser() {
           <p className="text-sm text-muted-foreground">
             {trail.length ? `Inside ${folderName}` : folder.description}
           </p>
-
         </div>
         <div className="flex items-center gap-1">
           <Badge variant={writable ? "default" : "secondary"}>
@@ -363,15 +354,13 @@ function FolderBrowser() {
           {trail.length === 0 && canRenameRoot && (
             <FolderCardMenu
               name={folderName}
-              onRename={(next) =>
-                renameFolder.mutate({ target: folder, name: next })
-              }
+              onRename={(next) => renameFolder.mutate({ target: folder, name: next })}
 
               {...(isAdmin
                 ? {
                     onDelete: () => removeFolder.mutateAsync(),
                     deleting: removeFolder.isPending,
-                    deleteDescription: `"${folderName}" and all files stored inside it will be permanently deleted. This cannot be undone.`,
+                    deleteDescription: `"${folderName}" and all files stored inside it will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`,
                   }
                 : {})}
             />
@@ -379,57 +368,45 @@ function FolderBrowser() {
         </div>
       </div>
 
-      {clipboard && (() => {
-        const destinationName = trail.at(-1)?.name ?? folderName;
-        const alreadyHere =
-          clipboard.action === "cut" &&
-          clipboard.sourceFolderId === activeFolder?.id;
+      {clipboard &&
+        (() => {
+          const destinationName = trail.at(-1)?.name ?? folderName;
+          const alreadyHere =
+            clipboard.action === "cut" && clipboard.sourceFolderId === activeFolder?.id;
 
-        return (
-        <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">
-              {clipboard.file.name}
-            </span>{" "}
-            ready to {clipboard.action === "cut" ? "move" : "copy"} from{" "}
-            {clipboard.sourceFolderName}
-            {alreadyHere && (
-              <span className="ml-1 text-xs">— already in this folder.</span>
-            )}
-            {!writable && (
-              <span className="ml-1 text-xs">
-                — you don't have upload rights here.
-              </span>
-            )}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => clearClipboard()}>
-              <X className="mr-2 h-4 w-4" />
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={!writable || paste.isPending || alreadyHere}
-              onClick={() => paste.mutate()}
-            >
-              {paste.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ClipboardPaste className="mr-2 h-4 w-4" />
-              )}
-              {clipboard.action === "cut"
-                ? `Move to ${destinationName}`
-                : `Paste into ${destinationName}`}
-            </Button>
-          </div>
-        </div>
-        );
-      })()}
-
-
-
-
-
+          return (
+            <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{clipboard.file.name}</span> ready to{" "}
+                {clipboard.action === "cut" ? "move" : "copy"} from {clipboard.sourceFolderName}
+                {alreadyHere && <span className="ml-1 text-xs">— already in this folder.</span>}
+                {!writable && (
+                  <span className="ml-1 text-xs">— you don't have upload rights here.</span>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => clearClipboard()}>
+                  <X className="mr-2 h-4 w-4" />
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!writable || paste.isPending || alreadyHere}
+                  onClick={() => paste.mutate()}
+                >
+                  {paste.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ClipboardPaste className="mr-2 h-4 w-4" />
+                  )}
+                  {clipboard.action === "cut"
+                    ? `Move to ${destinationName}`
+                    : `Paste into ${destinationName}`}
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
 
       {writable ? (
         <div
@@ -465,10 +442,7 @@ function FolderBrowser() {
             }}
           />
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <Button
-              onClick={() => inputRef.current?.click()}
-              disabled={upload.isPending}
-            >
+            <Button onClick={() => inputRef.current?.click()} disabled={upload.isPending}>
               {upload.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -481,9 +455,7 @@ function FolderBrowser() {
               New Folder
             </Button>
           </div>
-          {progress !== null && (
-            <Progress value={progress} className="mx-auto mt-4 h-2 max-w-sm" />
-          )}
+          {progress !== null && <Progress value={progress} className="mx-auto mt-4 h-2 max-w-sm" />}
         </div>
       ) : (
         <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
@@ -512,23 +484,19 @@ function FolderBrowser() {
                 {canRenameFolder(profile ?? null, sub) && (
                   <FolderCardMenu
                     name={sub.name}
-                    onRename={(next) =>
-                      renameFolder.mutate({ target: sub, name: next })
-                    }
+                    onRename={(next) => renameFolder.mutate({ target: sub, name: next })}
                     onDelete={async () => {
                       await removeSubfolder.mutateAsync(sub);
                       if (currentId === sub.id) setCurrentId(sub.parent_id);
                     }}
                     deleting={removeSubfolder.isPending}
-                    deleteDescription={`"${sub.name}", its sub-folders and every file inside will be permanently deleted.`}
+                    deleteDescription={`"${sub.name}", its sub-folders and every file inside will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`}
                   />
                 )}
-
               </div>
               <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
               <p className="text-xs text-muted-foreground">
                 {childrenOf(folders, sub.id).length} sub-folders
-
               </p>
             </div>
           ))}
@@ -541,10 +509,7 @@ function FolderBrowser() {
             <DialogTitle>Create new folder</DialogTitle>
             <DialogDescription>
               The folder will be added inside{" "}
-              <span className="font-medium">
-                {trail.at(-1)?.name ?? folderName}
-              </span>
-              .
+              <span className="font-medium">{trail.at(-1)?.name ?? folderName}</span>.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -569,8 +534,6 @@ function FolderBrowser() {
         </DialogContent>
       </Dialog>
 
-
-
       <div className="glass-card overflow-hidden rounded-2xl">
         <Table>
           <TableHeader>
@@ -592,10 +555,7 @@ function FolderBrowser() {
             )}
             {!filesLoading && visibleFiles.length === 0 && (
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-12 text-center text-sm text-muted-foreground"
-                >
+                <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
                   No files in this folder yet.
                 </TableCell>
               </TableRow>
@@ -603,86 +563,80 @@ function FolderBrowser() {
             {visibleFiles.map((file) => {
               const clipped = clipboard?.file.id === file.id;
               return (
-              <TableRow
-                key={file.id}
-                title="Double-click to preview"
-                onDoubleClick={() => setPreviewFile(file)}
-                className={`cursor-pointer ${clipped ? "bg-accent/40" : ""}`}
-              >
-
-                <TableCell className="font-medium">
-                  <span className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span
-                      className={`truncate ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
-                    >
-                      {file.name}
-                    </span>
-                    {clipped && (
-                      <Badge variant="secondary" className="shrink-0 capitalize">
-                        {clipboard?.action}
-                      </Badge>
-                    )}
-                  </span>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell text-muted-foreground">
-                  {formatBytes(file.size)}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-muted-foreground">
-                  {formatDate(file.created_at)}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell text-muted-foreground">
-                  {file.uploader_email}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDownload(file)}
-                    >
-                      <Download className="h-4 w-4" />
-                      <span className="sr-only">Download</span>
-                    </Button>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove.mutate(file)}
-                        disabled={remove.isPending}
+                <TableRow
+                  key={file.id}
+                  title="Double-click to preview"
+                  onDoubleClick={() => setPreviewFile(file)}
+                  className={`cursor-pointer ${clipped ? "bg-accent/40" : ""}`}
+                >
+                  <TableCell className="font-medium">
+                    <span className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span
+                        className={`truncate ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                        <span className="sr-only">Delete</span>
+                        {file.name}
+                      </span>
+                      {clipped && (
+                        <Badge variant="secondary" className="shrink-0 capitalize">
+                          {clipboard?.action}
+                        </Badge>
+                      )}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell text-muted-foreground">
+                    {formatBytes(file.size)}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-muted-foreground">
+                    {formatDate(file.created_at)}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell text-muted-foreground">
+                    {file.uploader_email}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => handleDownload(file)}>
+                        <Download className="h-4 w-4" />
+                        <span className="sr-only">Download</span>
                       </Button>
-                    )}
-                    <FileRowMenu
-                      canCut={writable}
-                      onPreview={() => setPreviewFile(file)}
-                      onCut={() => {
-                        setClipboard({
-                          action: "cut",
-                          file,
-                          sourceFolderId: folder.id,
-                          sourceFolderName: folderName,
-                        });
-                        toast.success(`"${file.name}" cut — open a folder to move it`);
-                      }}
-                      onCopy={() => {
-                        setClipboard({
-                          action: "copy",
-                          file,
-                          sourceFolderId: folder.id,
-                          sourceFolderName: folderName,
-                        });
-                        toast.success(`"${file.name}" copied — open a folder to paste`);
-                      }}
-                    />
-                  </div>
-                </TableCell>
-              </TableRow>
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => remove.mutate(file)}
+                          disabled={remove.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      )}
+                      <FileRowMenu
+                        canCut={writable}
+                        onPreview={() => setPreviewFile(file)}
+                        onCut={() => {
+                          setClipboard({
+                            action: "cut",
+                            file,
+                            sourceFolderId: folder.id,
+                            sourceFolderName: folderName,
+                          });
+                          toast.success(`"${file.name}" cut — open a folder to move it`);
+                        }}
+                        onCopy={() => {
+                          setClipboard({
+                            action: "copy",
+                            file,
+                            sourceFolderId: folder.id,
+                            sourceFolderName: folderName,
+                          });
+                          toast.success(`"${file.name}" copied — open a folder to paste`);
+                        }}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
               );
             })}
-
           </TableBody>
         </Table>
       </div>
@@ -695,4 +649,3 @@ function FolderBrowser() {
     </div>
   );
 }
-

@@ -134,7 +134,7 @@ export function FolderCardMenu({
             <DialogTitle>Delete folder</DialogTitle>
             <DialogDescription>
               {deleteDescription ??
-                `"${name}" and everything inside it will be permanently removed. This cannot be undone.`}
+                `"${name}" and everything inside it will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
