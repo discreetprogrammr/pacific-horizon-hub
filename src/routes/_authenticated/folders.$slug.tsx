@@ -2,6 +2,9 @@ import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-r
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ClipboardPaste,
   Download,
   FileText,
@@ -81,6 +84,8 @@ interface FolderBrowserSearch {
   q?: string;
 }
 
+type FileSortKey = "name" | "size" | "date";
+
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
   // Both optional and both left out entirely on a plain navigation, so
   // existing <Link>/navigate calls elsewhere in the app don't need to
@@ -127,6 +132,10 @@ function FolderBrowser() {
   const [viewMode, setViewMode] = useViewMode();
   // Same idea via the `q` param, pre-filling this folder's own file search.
   const [fileQuery, setFileQuery] = useState(() => search.q ?? "");
+  // File-list column sort. Defaults to newest-first, matching fetchFiles'
+  // own default order — so nothing changes visually until a header is clicked.
+  const [sortBy, setSortBy] = useState<FileSortKey>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: allFolders, isLoading: folderLoading } = useQuery({
@@ -200,6 +209,28 @@ function FolderBrowser() {
         file.name.toLowerCase().includes(fileQuery.trim().toLowerCase()),
       )
     : visibleFiles;
+
+  // Clicking an already-active column flips direction; switching to a new
+  // column picks whichever direction is most useful first (A-Z for name,
+  // largest/newest first for size and date).
+  function toggleSort(key: FileSortKey) {
+    if (sortBy === key) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortBy(key);
+    setSortDir(key === "name" ? "asc" : "desc");
+  }
+
+  const sortedFiles: PortalFile[] = [...filteredFiles].sort((a, b) => {
+    const cmp =
+      sortBy === "name"
+        ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        : sortBy === "size"
+          ? a.size - b.size
+          : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   const writable = canWrite(profile ?? null, activeFolder);
 
@@ -684,7 +715,7 @@ function FolderBrowser() {
             </p>
           ) : viewMode === "grid" ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredFiles.map((file) => {
+              {sortedFiles.map((file) => {
                 const clipped = clipboard?.file.id === file.id;
                 return (
                   <div
@@ -760,15 +791,36 @@ function FolderBrowser() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>File name</TableHead>
-                    <TableHead className="hidden sm:table-cell">Size</TableHead>
-                    <TableHead className="hidden md:table-cell">Date uploaded</TableHead>
+                    <TableHead>
+                      <SortHeaderButton
+                        label="File name"
+                        active={sortBy === "name"}
+                        dir={sortDir}
+                        onClick={() => toggleSort("name")}
+                      />
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell">
+                      <SortHeaderButton
+                        label="Size"
+                        active={sortBy === "size"}
+                        dir={sortDir}
+                        onClick={() => toggleSort("size")}
+                      />
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      <SortHeaderButton
+                        label="Date uploaded"
+                        active={sortBy === "date"}
+                        dir={sortDir}
+                        onClick={() => toggleSort("date")}
+                      />
+                    </TableHead>
                     <TableHead className="hidden lg:table-cell">Uploaded by</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredFiles.map((file) => {
+                  {sortedFiles.map((file) => {
                     const clipped = clipboard?.file.id === file.id;
                     return (
                       <TableRow
@@ -858,5 +910,38 @@ function FolderBrowser() {
         onDownload={handleDownload}
       />
     </div>
+  );
+}
+
+/** A clickable table-header label with a sort-direction indicator; the icon
+ * is a neutral up/down glyph until this column is the active sort. */
+function SortHeaderButton({
+  label,
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  dir: "asc" | "desc";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-left hover:text-foreground"
+    >
+      {label}
+      {active ? (
+        dir === "asc" ? (
+          <ArrowUp className="h-3.5 w-3.5" />
+        ) : (
+          <ArrowDown className="h-3.5 w-3.5" />
+        )
+      ) : (
+        <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground/50" />
+      )}
+    </button>
   );
 }
