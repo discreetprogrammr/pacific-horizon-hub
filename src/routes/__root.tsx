@@ -13,6 +13,13 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
+// Applies the saved light/dark/system theme preference to <html> before
+// first paint, so there's no flash of the wrong theme on load. Runs as a
+// blocking inline script (must execute before hydration) — see
+// src/hooks/use-theme.ts for the React-side counterpart that keeps things
+// in sync afterwards and for what the "phtek-portal-theme" key holds.
+const THEME_INIT_SCRIPT = `(function(){try{var s=localStorage.getItem("phtek-portal-theme");var d=s==="dark"||(s!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);if(d)document.documentElement.classList.add("dark");}catch(e){}})();`;
+
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -110,8 +117,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>

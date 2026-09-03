@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +17,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ChangePasswordDialog } from "@/components/portal/change-password-dialog";
+import { ThemeToggle } from "@/components/portal/theme-toggle";
+import { useTheme } from "@/hooks/use-theme";
 import { displayName, initialsOf, type PortalProfile } from "@/lib/portal";
 
 const LOGO_URL = "/pacific-horizon-tek-logo.png";
@@ -26,6 +27,7 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [theme, setTheme] = useTheme();
 
   async function handleSignOut() {
     await queryClient.cancelQueries();
@@ -65,6 +67,8 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
           <p className="text-xs text-muted-foreground">{profile?.email}</p>
         </div>
 
+        <ThemeToggle value={theme} onChange={setTheme} />
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" aria-label="Account menu" className="rounded-full">
@@ -90,11 +94,6 @@ export function PortalHeader({ profile }: { profile: PortalProfile | null }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-
-        <Button variant="outline" size="sm" onClick={handleSignOut}>
-          <LogOut className="mr-1.5 h-4 w-4" />
-          Log out
-        </Button>
       </div>
 
       <ChangePasswordDialog
