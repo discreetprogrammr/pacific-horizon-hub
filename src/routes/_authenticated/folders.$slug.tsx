@@ -48,6 +48,8 @@ import {
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
 import { FileRowMenu } from "@/components/portal/file-row-menu";
 import { FilePreviewDialog } from "@/components/portal/file-preview-dialog";
+import { ViewToggle } from "@/components/portal/view-toggle";
+import { useViewMode } from "@/hooks/use-view-mode";
 import { clearClipboard, setClipboard, useClipboard } from "@/lib/clipboard";
 import {
   canRenameFolder,
@@ -101,6 +103,7 @@ function FolderBrowser() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [previewFile, setPreviewFile] = useState<PortalFile | null>(null);
+  const [viewMode, setViewMode] = useViewMode();
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: allFolders, isLoading: folderLoading } = useQuery({
@@ -347,10 +350,11 @@ function FolderBrowser() {
             {trail.length ? `Inside ${folderName}` : folder.description}
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
           <Badge variant={writable ? "default" : "secondary"}>
             {writable ? "Read & Upload" : "Read only"}
           </Badge>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
           {trail.length === 0 && canRenameRoot && (
             <FolderCardMenu
               name={folderName}
@@ -464,44 +468,97 @@ function FolderBrowser() {
         </div>
       )}
 
-      {visibleSubfolders.length > 0 && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {visibleSubfolders.map((sub) => (
-            <div
-              key={sub.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => setCurrentId(sub.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") setCurrentId(sub.id);
-              }}
-              className="glass-card flex cursor-pointer flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
-            >
-              <div className="flex items-start justify-between">
-                <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
-                  <FolderClosed className="h-5 w-5" />
-                </span>
-                {canRenameFolder(profile ?? null, sub) && (
-                  <FolderCardMenu
-                    name={sub.name}
-                    onRename={(next) => renameFolder.mutate({ target: sub, name: next })}
-                    onDelete={async () => {
-                      await removeSubfolder.mutateAsync(sub);
-                      if (currentId === sub.id) setCurrentId(sub.parent_id);
-                    }}
-                    deleting={removeSubfolder.isPending}
-                    deleteDescription={`"${sub.name}", its sub-folders and every file inside will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`}
-                  />
-                )}
+      {visibleSubfolders.length > 0 &&
+        (viewMode === "grid" ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleSubfolders.map((sub) => (
+              <div
+                key={sub.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setCurrentId(sub.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setCurrentId(sub.id);
+                }}
+                className="glass-card flex cursor-pointer flex-col rounded-2xl p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
+              >
+                <div className="flex items-start justify-between">
+                  <span className="brand-gradient inline-flex h-10 w-10 items-center justify-center rounded-xl text-primary-foreground">
+                    <FolderClosed className="h-5 w-5" />
+                  </span>
+                  {canRenameFolder(profile ?? null, sub) && (
+                    <FolderCardMenu
+                      name={sub.name}
+                      onRename={(next) => renameFolder.mutate({ target: sub, name: next })}
+                      onDelete={async () => {
+                        await removeSubfolder.mutateAsync(sub);
+                        if (currentId === sub.id) setCurrentId(sub.parent_id);
+                      }}
+                      deleting={removeSubfolder.isPending}
+                      deleteDescription={`"${sub.name}", its sub-folders and every file inside will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`}
+                    />
+                  )}
+                </div>
+                <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {childrenOf(folders, sub.id).length} sub-folders
+                </p>
               </div>
-              <h3 className="mt-3 font-semibold tracking-tight">{sub.name}</h3>
-              <p className="text-xs text-muted-foreground">
-                {childrenOf(folders, sub.id).length} sub-folders
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        ) : (
+          <div className="glass-card overflow-hidden rounded-2xl">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Sub-folder</TableHead>
+                  <TableHead className="hidden sm:table-cell">Sub-folders</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleSubfolders.map((sub) => (
+                  <TableRow
+                    key={sub.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setCurrentId(sub.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") setCurrentId(sub.id);
+                    }}
+                    className="cursor-pointer"
+                  >
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-3">
+                        <span className="brand-gradient inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-foreground">
+                          <FolderClosed className="h-4 w-4" />
+                        </span>
+                        <span className="truncate">{sub.name}</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-muted-foreground">
+                      {childrenOf(folders, sub.id).length} sub-folders
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {canRenameFolder(profile ?? null, sub) && (
+                        <FolderCardMenu
+                          name={sub.name}
+                          onRename={(next) => renameFolder.mutate({ target: sub, name: next })}
+                          onDelete={async () => {
+                            await removeSubfolder.mutateAsync(sub);
+                            if (currentId === sub.id) setCurrentId(sub.parent_id);
+                          }}
+                          deleting={removeSubfolder.isPending}
+                          deleteDescription={`"${sub.name}", its sub-folders and every file inside will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`}
+                        />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ))}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -534,112 +591,181 @@ function FolderBrowser() {
         </DialogContent>
       </Dialog>
 
-      <div className="glass-card overflow-hidden rounded-2xl">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>File name</TableHead>
-              <TableHead className="hidden sm:table-cell">Size</TableHead>
-              <TableHead className="hidden md:table-cell">Date uploaded</TableHead>
-              <TableHead className="hidden lg:table-cell">Uploaded by</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filesLoading && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center">
-                  <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
-                </TableCell>
-              </TableRow>
-            )}
-            {!filesLoading && visibleFiles.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
-                  No files in this folder yet.
-                </TableCell>
-              </TableRow>
-            )}
-            {visibleFiles.map((file) => {
-              const clipped = clipboard?.file.id === file.id;
-              return (
-                <TableRow
-                  key={file.id}
-                  title="Double-click to preview"
-                  onDoubleClick={() => setPreviewFile(file)}
-                  className={`cursor-pointer ${clipped ? "bg-accent/40" : ""}`}
+      {filesLoading ? (
+        <div className="glass-card flex justify-center rounded-2xl p-10">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : visibleFiles.length === 0 ? (
+        <p className="glass-card rounded-2xl p-12 text-center text-sm text-muted-foreground">
+          No files in this folder yet.
+        </p>
+      ) : viewMode === "grid" ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visibleFiles.map((file) => {
+            const clipped = clipboard?.file.id === file.id;
+            return (
+              <div
+                key={file.id}
+                title="Double-click to preview"
+                onDoubleClick={() => setPreviewFile(file)}
+                className={`glass-card flex cursor-pointer flex-col rounded-2xl p-4 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)] ${clipped ? "bg-accent/40" : ""}`}
+              >
+                <div className="flex items-start justify-between">
+                  <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                    <FileText className="h-5 w-5" />
+                  </span>
+                  <FileRowMenu
+                    canCut={writable}
+                    onPreview={() => setPreviewFile(file)}
+                    onCut={() => {
+                      setClipboard({
+                        action: "cut",
+                        file,
+                        sourceFolderId: folder.id,
+                        sourceFolderName: folderName,
+                      });
+                      toast.success(`"${file.name}" cut — open a folder to move it`);
+                    }}
+                    onCopy={() => {
+                      setClipboard({
+                        action: "copy",
+                        file,
+                        sourceFolderId: folder.id,
+                        sourceFolderName: folderName,
+                      });
+                      toast.success(`"${file.name}" copied — open a folder to paste`);
+                    }}
+                  />
+                </div>
+                <p
+                  className={`mt-3 truncate text-sm font-medium ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
+                  title={file.name}
                 >
-                  <TableCell className="font-medium">
-                    <span className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span
-                        className={`truncate ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
-                      >
-                        {file.name}
-                      </span>
-                      {clipped && (
-                        <Badge variant="secondary" className="shrink-0 capitalize">
-                          {clipboard?.action}
-                        </Badge>
-                      )}
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell text-muted-foreground">
-                    {formatBytes(file.size)}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-muted-foreground">
-                    {formatDate(file.created_at)}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell text-muted-foreground">
-                    {file.uploader_email}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleDownload(file)}>
-                        <Download className="h-4 w-4" />
-                        <span className="sr-only">Download</span>
-                      </Button>
-                      {isAdmin && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => remove.mutate(file)}
-                          disabled={remove.isPending}
+                  {file.name}
+                </p>
+                <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  {formatBytes(file.size)} · {formatDate(file.created_at)}
+                  {clipped && (
+                    <Badge variant="secondary" className="shrink-0 capitalize">
+                      {clipboard?.action}
+                    </Badge>
+                  )}
+                </p>
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-2">
+                  <Button variant="ghost" size="sm" onClick={() => handleDownload(file)}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => remove.mutate(file)}
+                      disabled={remove.isPending}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="glass-card overflow-hidden rounded-2xl">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>File name</TableHead>
+                <TableHead className="hidden sm:table-cell">Size</TableHead>
+                <TableHead className="hidden md:table-cell">Date uploaded</TableHead>
+                <TableHead className="hidden lg:table-cell">Uploaded by</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visibleFiles.map((file) => {
+                const clipped = clipboard?.file.id === file.id;
+                return (
+                  <TableRow
+                    key={file.id}
+                    title="Double-click to preview"
+                    onDoubleClick={() => setPreviewFile(file)}
+                    className={`cursor-pointer ${clipped ? "bg-accent/40" : ""}`}
+                  >
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span
+                          className={`truncate ${clipboard?.action === "cut" && clipped ? "opacity-60" : ""}`}
                         >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                          <span className="sr-only">Delete</span>
+                          {file.name}
+                        </span>
+                        {clipped && (
+                          <Badge variant="secondary" className="shrink-0 capitalize">
+                            {clipboard?.action}
+                          </Badge>
+                        )}
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-muted-foreground">
+                      {formatBytes(file.size)}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-muted-foreground">
+                      {formatDate(file.created_at)}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-muted-foreground">
+                      {file.uploader_email}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => handleDownload(file)}>
+                          <Download className="h-4 w-4" />
+                          <span className="sr-only">Download</span>
                         </Button>
-                      )}
-                      <FileRowMenu
-                        canCut={writable}
-                        onPreview={() => setPreviewFile(file)}
-                        onCut={() => {
-                          setClipboard({
-                            action: "cut",
-                            file,
-                            sourceFolderId: folder.id,
-                            sourceFolderName: folderName,
-                          });
-                          toast.success(`"${file.name}" cut — open a folder to move it`);
-                        }}
-                        onCopy={() => {
-                          setClipboard({
-                            action: "copy",
-                            file,
-                            sourceFolderId: folder.id,
-                            sourceFolderName: folderName,
-                          });
-                          toast.success(`"${file.name}" copied — open a folder to paste`);
-                        }}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </div>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => remove.mutate(file)}
+                            disabled={remove.isPending}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                            <span className="sr-only">Delete</span>
+                          </Button>
+                        )}
+                        <FileRowMenu
+                          canCut={writable}
+                          onPreview={() => setPreviewFile(file)}
+                          onCut={() => {
+                            setClipboard({
+                              action: "cut",
+                              file,
+                              sourceFolderId: folder.id,
+                              sourceFolderName: folderName,
+                            });
+                            toast.success(`"${file.name}" cut — open a folder to move it`);
+                          }}
+                          onCopy={() => {
+                            setClipboard({
+                              action: "copy",
+                              file,
+                              sourceFolderId: folder.id,
+                              sourceFolderName: folderName,
+                            });
+                            toast.success(`"${file.name}" copied — open a folder to paste`);
+                          }}
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       <FilePreviewDialog
         file={previewFile}

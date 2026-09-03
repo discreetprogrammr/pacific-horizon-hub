@@ -1,10 +1,18 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderClosed, Lock, ShieldCheck, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableRow,
+  TableHead,
+} from "@/components/ui/table";
 import {
   canRenameFolder,
   canWrite,
@@ -18,6 +26,8 @@ import {
   type Folder,
 } from "@/lib/portal";
 import { FolderCardMenu } from "@/components/portal/folder-card-menu";
+import { ViewToggle } from "@/components/portal/view-toggle";
+import { useViewMode } from "@/hooks/use-view-mode";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({
@@ -40,6 +50,8 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 function Dashboard() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [viewMode, setViewMode] = useViewMode();
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: allFolders, isLoading } = useQuery({
     queryKey: ["folders", "all"],
@@ -108,20 +120,31 @@ function Dashboard() {
       </section>
 
       <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">Your folders</h2>
-          <p className="text-sm text-muted-foreground">
-            Only folders permitted by your role are shown.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Your folders</h2>
+            <p className="text-sm text-muted-foreground">
+              Only folders permitted by your role are shown.
+            </p>
+          </div>
+          <ViewToggle value={viewMode} onChange={setViewMode} />
         </div>
 
         {isLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-40 rounded-2xl" />
-            ))}
-          </div>
-        ) : (
+          viewMode === "grid" ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-40 rounded-2xl" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-12 rounded-lg" />
+              ))}
+            </div>
+          )
+        ) : viewMode === "grid" ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {folders.map((folder) => {
               const writable = canWrite(profile ?? null, folder);
@@ -174,6 +197,82 @@ function Dashboard() {
                 </Link>
               );
             })}
+          </div>
+        ) : (
+          <div className="glass-card overflow-hidden rounded-2xl">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Folder</TableHead>
+                  <TableHead className="hidden sm:table-cell">Access</TableHead>
+                  <TableHead className="hidden md:table-cell">Files</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {folders.map((folder) => {
+                  const writable = canWrite(profile ?? null, folder);
+                  const renamable = canRenameFolder(profile ?? null, folder);
+                  const displayName = folder.name;
+                  const fileCount = totalFor(folder);
+                  return (
+                    <TableRow
+                      key={folder.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() =>
+                        navigate({ to: "/folders/$slug", params: { slug: folder.slug } })
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          navigate({ to: "/folders/$slug", params: { slug: folder.slug } });
+                        }
+                      }}
+                      className="cursor-pointer"
+                    >
+                      <TableCell className="font-medium">
+                        <span className="flex items-center gap-3">
+                          <span className="brand-gradient inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary-foreground">
+                            <FolderClosed className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block truncate">{displayName}</span>
+                            {folder.description && (
+                              <span className="block truncate text-xs font-normal text-muted-foreground">
+                                {folder.description}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge variant={writable ? "default" : "secondary"}>
+                          {writable ? "Read & Upload" : "Read only"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-muted-foreground">
+                        {fileCount} files
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {renamable && (
+                          <FolderCardMenu
+                            name={displayName}
+                            onRename={(next) => renameFolder.mutate({ target: folder, name: next })}
+                            {...(isAdmin
+                              ? {
+                                  onDelete: () => removeFolder.mutateAsync(folder),
+                                  deleting: removeFolder.isPending,
+                                  deleteDescription: `"${displayName}" and all ${fileCount} file(s) stored inside it will be moved to Recently Deleted. A super admin can restore it or delete it permanently from there.`,
+                                }
+                              : {})}
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         )}
 
