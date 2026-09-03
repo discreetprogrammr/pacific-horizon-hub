@@ -72,6 +72,12 @@ function Trash() {
   });
   const all: Folder[] = allFolders ?? [];
   const folderNameOf = (id: string) => all.find((f) => f.id === id)?.name ?? "Unknown folder";
+  // Deleted folders render as a flat list, but a cascade-delete can carry
+  // several levels of sub-folders into it at once — this gives each row
+  // enough context to tell them apart, whether the parent was deleted too
+  // or is still active elsewhere.
+  const parentNameOf = (folder: Folder) =>
+    folder.parent_id ? (all.find((f) => f.id === folder.parent_id)?.name ?? null) : null;
 
   const { data: deletedFolders, isLoading: foldersLoading } = useQuery({
     queryKey: ["folders", "deleted"],
@@ -199,41 +205,53 @@ function Trash() {
                   </TableCell>
                 </TableRow>
               )}
-              {(deletedFolders ?? []).map((folder) => (
-                <TableRow key={folder.id}>
-                  <TableCell className="font-medium">
-                    <span className="flex items-center gap-2">
-                      <FolderClosed className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <span className="truncate">{folder.name}</span>
-                      <Badge variant="secondary">{folder.department}</Badge>
-                    </span>
-                  </TableCell>
-                  <TableCell className="hidden sm:table-cell text-muted-foreground">
-                    {folder.deleted_at ? formatDate(folder.deleted_at) : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => restoreFolderMutation.mutate(folder)}
-                        disabled={restoreFolderMutation.isPending}
-                      >
-                        <RotateCcw className="mr-2 h-4 w-4" />
-                        Restore
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setPurgeTarget({ kind: "folder", folder })}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                        <span className="sr-only">Delete forever</span>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {(deletedFolders ?? []).map((folder) => {
+                const parentName = parentNameOf(folder);
+                return (
+                  <TableRow key={folder.id}>
+                    <TableCell className="font-medium">
+                      <span className="flex items-center gap-2">
+                        <FolderClosed className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-2">
+                            <span className="truncate">{folder.name}</span>
+                            <Badge variant="secondary">{folder.department}</Badge>
+                          </span>
+                          {parentName && (
+                            <span className="block truncate text-xs font-normal text-muted-foreground">
+                              Inside &quot;{parentName}&quot;
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-muted-foreground">
+                      {folder.deleted_at ? formatDate(folder.deleted_at) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => restoreFolderMutation.mutate(folder)}
+                          disabled={restoreFolderMutation.isPending}
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Restore
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPurgeTarget({ kind: "folder", folder })}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <span className="sr-only">Delete forever</span>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
