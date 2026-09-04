@@ -625,6 +625,46 @@ export async function moveFileToFolder(file: PortalFile, target: Folder) {
   }
 }
 
+/**
+ * Copies several files into a folder at once, for pasting a multi-file
+ * clipboard selection. Sequential, like downloadFiles — each copy already
+ * does a storage write plus a DB insert, so running them one at a time
+ * avoids piling up concurrent R2 requests for what's normally an
+ * occasional, human-paced action.
+ */
+export async function copyFilesToFolder(
+  files: PortalFile[],
+  target: Folder,
+  userId: string,
+): Promise<BulkResult> {
+  const failed: PortalFile[] = [];
+  let succeeded = 0;
+  for (const file of files) {
+    try {
+      await copyFileToFolder(file, target, userId);
+      succeeded += 1;
+    } catch {
+      failed.push(file);
+    }
+  }
+  return { succeeded, failed };
+}
+
+/** Moves several files into a folder at once, for pasting a cut multi-file selection. */
+export async function moveFilesToFolder(files: PortalFile[], target: Folder): Promise<BulkResult> {
+  const failed: PortalFile[] = [];
+  let succeeded = 0;
+  for (const file of files) {
+    try {
+      await moveFileToFolder(file, target);
+      succeeded += 1;
+    } catch {
+      failed.push(file);
+    }
+  }
+  return { succeeded, failed };
+}
+
 export function formatBytes(bytes: number) {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];

@@ -6,6 +6,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   ClipboardPaste,
+  Copy,
   Download,
   FileText,
   FolderClosed,
@@ -60,7 +61,7 @@ import {
   canRenameFolder,
   canWrite,
   childrenOf,
-  copyFileToFolder,
+  copyFilesToFolder,
   createSubfolder,
   softDeleteFile,
   softDeleteFiles,
@@ -72,7 +73,7 @@ import {
   fetchProfile,
   formatBytes,
   formatDate,
-  moveFileToFolder,
+  moveFilesToFolder,
   pathOf,
   renameFolderRow,
   uploadFile,
@@ -265,6 +266,22 @@ function FolderBrowser() {
     setSelectedIds(checked ? new Set(sortedFiles.map((file) => file.id)) : new Set());
   }
 
+  // Puts the selection on the same clipboard the per-file "Copy" menu item
+  // uses, so pasting several files into another folder is just the existing
+  // paste flow with more than one file riding along.
+  function handleBulkCopy() {
+    setClipboard({
+      action: "copy",
+      files: selectedFiles,
+      sourceFolderId: activeFolder!.id,
+      sourceFolderName: activeFolder!.name,
+    });
+    toast.success(
+      `${selectedFiles.length} file${selectedFiles.length === 1 ? "" : "s"} copied — open a folder to paste`,
+    );
+    setSelectedIds(new Set());
+  }
+
   const writable = canWrite(profile ?? null, activeFolder);
 
   const isAdmin = profile?.role === "super_admin";
@@ -342,19 +359,28 @@ function FolderBrowser() {
       if (!clipboard) throw new Error("Nothing on the clipboard");
       if (!activeFolder) throw new Error("Destination folder unavailable");
       if (!profile) throw new Error("Your session has expired — sign in again");
-      if (clipboard.action === "copy") {
-        await copyFileToFolder(clipboard.file, activeFolder, profile.id);
-      } else {
-        await moveFileToFolder(clipboard.file, activeFolder);
-      }
+      const result =
+        clipboard.action === "copy"
+          ? await copyFilesToFolder(clipboard.files, activeFolder, profile.id)
+          : await moveFilesToFolder(clipboard.files, activeFolder);
       return {
         action: clipboard.action,
         sourceFolderId: clipboard.sourceFolderId,
+        ...result,
       };
     },
     onSuccess: (result) => {
       clearClipboard();
-      toast.success(result?.action === "cut" ? "File moved" : "File copied");
+      const verb = result.action === "cut" ? "moved" : "copied";
+      const noun = result.succeeded === 1 ? "File" : `${result.succeeded} files`;
+      if (result.failed.length === 0) {
+        toast.success(`${noun} ${verb}`);
+      } else {
+        const total = result.succeeded + result.failed.length;
+        toast.error(
+          `${result.action === "cut" ? "Moved" : "Copied"} ${result.succeeded} of ${total} files — the rest failed`,
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["files"] });
       if (result?.sourceFolderId) {
         queryClient.invalidateQueries({
@@ -535,11 +561,23 @@ function FolderBrowser() {
           const destinationName = trail.at(-1)?.name ?? folderName;
           const alreadyHere =
             clipboard.action === "cut" && clipboard.sourceFolderId === activeFolder?.id;
+          const clipboardLabel =
+            clipboard.files.length === 1
+              ? clipboard.files[0]!.name
+              : `${clipboard.files.length} files`;
+          const actionLabel =
+            clipboard.files.length === 1
+              ? clipboard.action === "cut"
+                ? `Move to ${destinationName}`
+                : `Paste into ${destinationName}`
+              : clipboard.action === "cut"
+                ? `Move ${clipboard.files.length} files to ${destinationName}`
+                : `Paste ${clipboard.files.length} files into ${destinationName}`;
 
           return (
             <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
               <p className="text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">{clipboard.file.name}</span> ready to{" "}
+                <span className="font-medium text-foreground">{clipboardLabel}</span> ready to{" "}
                 {clipboard.action === "cut" ? "move" : "copy"} from {clipboard.sourceFolderName}
                 {alreadyHere && <span className="ml-1 text-xs">— already in this folder.</span>}
                 {!writable && (
@@ -561,9 +599,7 @@ function FolderBrowser() {
                   ) : (
                     <ClipboardPaste className="mr-2 h-4 w-4" />
                   )}
-                  {clipboard.action === "cut"
-                    ? `Move to ${destinationName}`
-                    : `Paste into ${destinationName}`}
+                  {actionLabel}
                 </Button>
               </div>
             </div>
@@ -778,6 +814,10 @@ function FolderBrowser() {
                   )}
                   Download
                 </Button>
+                <Button variant="outline" size="sm" onClick={handleBulkCopy}>
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy
+                </Button>
                 {isAdmin && (
                   <Button
                     variant="outline"
@@ -825,7 +865,7 @@ function FolderBrowser() {
           ) : viewMode === "grid" ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {sortedFiles.map((file) => {
-                const clipped = clipboard?.file.id === file.id;
+                const clipped = clipboard?.files.some((f) => f.id === file.id) ?? false;
                 return (
                   <div
                     key={file.id}
@@ -854,18 +894,18 @@ function FolderBrowser() {
                         onCut={() => {
                           setClipboard({
                             action: "cut",
-                            file,
-                            sourceFolderId: folder.id,
-                            sourceFolderName: folderName,
+                            files: [file],
+                            sourceFolderId: activeFolder!.id,
+                            sourceFolderName: activeFolder!.name,
                           });
                           toast.success(`"${file.name}" cut — open a folder to move it`);
                         }}
                         onCopy={() => {
                           setClipboard({
                             action: "copy",
-                            file,
-                            sourceFolderId: folder.id,
-                            sourceFolderName: folderName,
+                            files: [file],
+                            sourceFolderId: activeFolder!.id,
+                            sourceFolderName: activeFolder!.name,
                           });
                           toast.success(`"${file.name}" copied — open a folder to paste`);
                         }}
@@ -948,7 +988,7 @@ function FolderBrowser() {
                 </TableHeader>
                 <TableBody>
                   {sortedFiles.map((file) => {
-                    const clipped = clipboard?.file.id === file.id;
+                    const clipped = clipboard?.files.some((f) => f.id === file.id) ?? false;
                     return (
                       <TableRow
                         key={file.id}
@@ -1013,18 +1053,18 @@ function FolderBrowser() {
                               onCut={() => {
                                 setClipboard({
                                   action: "cut",
-                                  file,
-                                  sourceFolderId: folder.id,
-                                  sourceFolderName: folderName,
+                                  files: [file],
+                                  sourceFolderId: activeFolder!.id,
+                                  sourceFolderName: activeFolder!.name,
                                 });
                                 toast.success(`"${file.name}" cut — open a folder to move it`);
                               }}
                               onCopy={() => {
                                 setClipboard({
                                   action: "copy",
-                                  file,
-                                  sourceFolderId: folder.id,
-                                  sourceFolderName: folderName,
+                                  files: [file],
+                                  sourceFolderId: activeFolder!.id,
+                                  sourceFolderName: activeFolder!.name,
                                 });
                                 toast.success(`"${file.name}" copied — open a folder to paste`);
                               }}

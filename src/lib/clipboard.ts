@@ -5,7 +5,8 @@ export type ClipboardAction = "cut" | "copy";
 
 export interface ClipboardEntry {
   action: ClipboardAction;
-  file: PortalFile;
+  /** One entry for a single file cut/copy, several for a bulk copy from the file-list selection. */
+  files: PortalFile[];
   sourceFolderId: string;
   sourceFolderName: string;
 }
@@ -16,7 +17,17 @@ function readStored(): ClipboardEntry | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ClipboardEntry) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as
+      ClipboardEntry | (Omit<ClipboardEntry, "files"> & { file: PortalFile });
+    // Normalizes a clipboard entry saved by an older build (single `file`
+    // rather than `files`) so a leftover sessionStorage value across a
+    // deploy doesn't crash instead of just being an already-stale clipboard.
+    if ("file" in parsed) {
+      const { file, ...rest } = parsed;
+      return { ...rest, files: [file] };
+    }
+    return parsed;
   } catch {
     return null;
   }
