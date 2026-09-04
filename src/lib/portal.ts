@@ -424,9 +424,9 @@ export async function downloadFile(file: PortalFile) {
   window.open(url, "_blank", "noopener");
 }
 
-export interface BulkResult {
+export interface BulkResult<T = PortalFile> {
   succeeded: number;
-  failed: PortalFile[];
+  failed: T[];
 }
 
 /**
@@ -565,6 +565,49 @@ export async function deleteFolder(folder: Folder, all: Folder[] = []) {
 
   const paths = (rows ?? []).map((r) => r.storage_path);
   if (paths.length) await deleteObjects({ data: { storagePaths: paths } });
+}
+
+/**
+ * Permanently deletes several files at once, for the "Delete selected"
+ * action in the recycle bin. Sequential — each one is a storage delete plus
+ * a DB delete, so this keeps R2 requests from piling up concurrently.
+ */
+export async function deleteFiles(files: PortalFile[]): Promise<BulkResult<PortalFile>> {
+  const failed: PortalFile[] = [];
+  let succeeded = 0;
+  for (const file of files) {
+    try {
+      await deleteFile(file);
+      succeeded += 1;
+    } catch {
+      failed.push(file);
+    }
+  }
+  return { succeeded, failed };
+}
+
+/**
+ * Permanently deletes several folders (and everything under each) at once.
+ * Sequential, same reasoning as deleteFiles — also sidesteps any ordering
+ * risk from selecting both a folder and one of its already-deleted
+ * children: whichever purges first removes the other's rows too, and the
+ * second call is then just a harmless no-op.
+ */
+export async function deleteFolders(
+  folders: Folder[],
+  all: Folder[] = [],
+): Promise<BulkResult<Folder>> {
+  const failed: Folder[] = [];
+  let succeeded = 0;
+  for (const folder of folders) {
+    try {
+      await deleteFolder(folder, all);
+      succeeded += 1;
+    } catch {
+      failed.push(folder);
+    }
+  }
+  return { succeeded, failed };
 }
 
 /** Duplicate a file's storage object and metadata row into another folder. */

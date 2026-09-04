@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { FileText, FolderClosed, Loader2, RotateCcw, ShieldAlert, Trash2 } from "lucide-react";
+import { FileText, FolderClosed, Loader2, RotateCcw, ShieldAlert, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -24,8 +25,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  deleteFile,
-  deleteFolder,
+  deleteFiles,
+  deleteFolders,
   fetchAllFoldersIncludingDeleted,
   fetchDeletedFiles,
   fetchDeletedFolders,
@@ -50,11 +51,16 @@ export const Route = createFileRoute("/_authenticated/trash")({
   component: Trash,
 });
 
-type PurgeTarget = { kind: "folder"; folder: Folder } | { kind: "file"; file: PortalFile };
+// Always arrays — a single row's "Delete forever" button is just a
+// one-item array, so the confirm dialog and the mutations only need to
+// handle one shape whether the purge came from a row or the bulk bar.
+type PurgeTarget = { kind: "folder"; folders: Folder[] } | { kind: "file"; files: PortalFile[] };
 
 function Trash() {
   const queryClient = useQueryClient();
   const [purgeTarget, setPurgeTarget] = useState<PurgeTarget | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(new Set());
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["profile"],
@@ -91,6 +97,55 @@ function Trash() {
     enabled: isAdmin,
   });
 
+  const selectedFolders: Folder[] = (deletedFolders ?? []).filter((f) =>
+    selectedFolderIds.has(f.id),
+  );
+  const allFoldersSelected =
+    (deletedFolders ?? []).length > 0 &&
+    (deletedFolders ?? []).every((f) => selectedFolderIds.has(f.id));
+  const someFoldersSelected = (deletedFolders ?? []).some((f) => selectedFolderIds.has(f.id));
+  const folderSelectAllState: boolean | "indeterminate" = allFoldersSelected
+    ? true
+    : someFoldersSelected
+      ? "indeterminate"
+      : false;
+
+  function toggleFolderSelected(id: string, checked: boolean) {
+    setSelectedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAllFolders(checked: boolean) {
+    setSelectedFolderIds(checked ? new Set((deletedFolders ?? []).map((f) => f.id)) : new Set());
+  }
+
+  const selectedFiles: PortalFile[] = (deletedFiles ?? []).filter((f) => selectedFileIds.has(f.id));
+  const allFilesSelected =
+    (deletedFiles ?? []).length > 0 && (deletedFiles ?? []).every((f) => selectedFileIds.has(f.id));
+  const someFilesSelected = (deletedFiles ?? []).some((f) => selectedFileIds.has(f.id));
+  const fileSelectAllState: boolean | "indeterminate" = allFilesSelected
+    ? true
+    : someFilesSelected
+      ? "indeterminate"
+      : false;
+
+  function toggleFileSelected(id: string, checked: boolean) {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAllFiles(checked: boolean) {
+    setSelectedFileIds(checked ? new Set((deletedFiles ?? []).map((f) => f.id)) : new Set());
+  }
+
   function invalidateAfterChange() {
     queryClient.invalidateQueries({ queryKey: ["folders"] });
     queryClient.invalidateQueries({ queryKey: ["files"] });
@@ -116,29 +171,47 @@ function Trash() {
   });
 
   const purgeFolder = useMutation({
-    mutationFn: (folder: Folder) => deleteFolder(folder, all),
-    onSuccess: () => {
-      toast.success("Folder permanently deleted");
+    mutationFn: (folders: Folder[]) => deleteFolders(folders, all),
+    onSuccess: (result) => {
+      setSelectedFolderIds(new Set());
+      if (result.failed.length === 0) {
+        toast.success(
+          `${result.succeeded === 1 ? "Folder" : `${result.succeeded} folders`} permanently deleted`,
+        );
+      } else {
+        toast.error(
+          `Deleted ${result.succeeded} of ${result.succeeded + result.failed.length} folders — the rest failed`,
+        );
+      }
       invalidateAfterChange();
     },
-    onError: (error: Error) => toast.error(error.message || "Could not delete this folder"),
+    onError: (error: Error) => toast.error(error.message || "Could not delete these folders"),
   });
 
   const purgeFile = useMutation({
-    mutationFn: (file: PortalFile) => deleteFile(file),
-    onSuccess: () => {
-      toast.success("File permanently deleted");
+    mutationFn: (files: PortalFile[]) => deleteFiles(files),
+    onSuccess: (result) => {
+      setSelectedFileIds(new Set());
+      if (result.failed.length === 0) {
+        toast.success(
+          `${result.succeeded === 1 ? "File" : `${result.succeeded} files`} permanently deleted`,
+        );
+      } else {
+        toast.error(
+          `Deleted ${result.succeeded} of ${result.succeeded + result.failed.length} files — the rest failed`,
+        );
+      }
       invalidateAfterChange();
     },
-    onError: (error: Error) => toast.error(error.message || "Could not delete this file"),
+    onError: (error: Error) => toast.error(error.message || "Could not delete these files"),
   });
 
   async function confirmPurge() {
     if (!purgeTarget) return;
     if (purgeTarget.kind === "folder") {
-      await purgeFolder.mutateAsync(purgeTarget.folder);
+      await purgeFolder.mutateAsync(purgeTarget.folders);
     } else {
-      await purgeFile.mutateAsync(purgeTarget.file);
+      await purgeFile.mutateAsync(purgeTarget.files);
     }
     setPurgeTarget(null);
   }
@@ -178,10 +251,38 @@ function Trash() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Folders
         </h2>
+        {selectedFolders.length > 0 && (
+          <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+            <p className="text-sm font-medium">
+              {selectedFolders.length} folder{selectedFolders.length === 1 ? "" : "s"} selected
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPurgeTarget({ kind: "folder", folders: selectedFolders })}
+              >
+                <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                Delete selected
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedFolderIds(new Set())}>
+                <X className="h-4 w-4" />
+                <span className="sr-only">Clear selection</span>
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="glass-card overflow-hidden rounded-2xl">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={folderSelectAllState}
+                    onCheckedChange={(checked) => toggleAllFolders(!!checked)}
+                    aria-label="Select all deleted folders"
+                  />
+                </TableHead>
                 <TableHead>Folder</TableHead>
                 <TableHead className="hidden sm:table-cell">Deleted</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -190,7 +291,7 @@ function Trash() {
             <TableBody>
               {foldersLoading && (
                 <TableRow>
-                  <TableCell colSpan={3} className="py-10 text-center">
+                  <TableCell colSpan={4} className="py-10 text-center">
                     <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                   </TableCell>
                 </TableRow>
@@ -198,7 +299,7 @@ function Trash() {
               {!foldersLoading && (deletedFolders ?? []).length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={3}
+                    colSpan={4}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No deleted folders.
@@ -209,6 +310,13 @@ function Trash() {
                 const parentName = parentNameOf(folder);
                 return (
                   <TableRow key={folder.id}>
+                    <TableCell>
+                      <Checkbox
+                        checked={selectedFolderIds.has(folder.id)}
+                        onCheckedChange={(checked) => toggleFolderSelected(folder.id, !!checked)}
+                        aria-label={`Select ${folder.name}`}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">
                       <span className="flex items-center gap-2">
                         <FolderClosed className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -242,7 +350,7 @@ function Trash() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => setPurgeTarget({ kind: "folder", folder })}
+                          onClick={() => setPurgeTarget({ kind: "folder", folders: [folder] })}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                           <span className="sr-only">Delete forever</span>
@@ -261,10 +369,38 @@ function Trash() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Files
         </h2>
+        {selectedFiles.length > 0 && (
+          <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+            <p className="text-sm font-medium">
+              {selectedFiles.length} file{selectedFiles.length === 1 ? "" : "s"} selected
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPurgeTarget({ kind: "file", files: selectedFiles })}
+              >
+                <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                Delete selected
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setSelectedFileIds(new Set())}>
+                <X className="h-4 w-4" />
+                <span className="sr-only">Clear selection</span>
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="glass-card overflow-hidden rounded-2xl">
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={fileSelectAllState}
+                    onCheckedChange={(checked) => toggleAllFiles(!!checked)}
+                    aria-label="Select all deleted files"
+                  />
+                </TableHead>
                 <TableHead>File name</TableHead>
                 <TableHead className="hidden sm:table-cell">From folder</TableHead>
                 <TableHead className="hidden md:table-cell">Deleted</TableHead>
@@ -274,7 +410,7 @@ function Trash() {
             <TableBody>
               {filesLoading && (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-10 text-center">
+                  <TableCell colSpan={5} className="py-10 text-center">
                     <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
                   </TableCell>
                 </TableRow>
@@ -282,7 +418,7 @@ function Trash() {
               {!filesLoading && (deletedFiles ?? []).length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={4}
+                    colSpan={5}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
                     No deleted files.
@@ -291,6 +427,13 @@ function Trash() {
               )}
               {(deletedFiles ?? []).map((file) => (
                 <TableRow key={file.id}>
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedFileIds.has(file.id)}
+                      onCheckedChange={(checked) => toggleFileSelected(file.id, !!checked)}
+                      aria-label={`Select ${file.name}`}
+                    />
+                  </TableCell>
                   <TableCell className="font-medium">
                     <span className="flex items-center gap-2">
                       <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -317,7 +460,7 @@ function Trash() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setPurgeTarget({ kind: "file", file })}
+                        onClick={() => setPurgeTarget({ kind: "file", files: [file] })}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                         <span className="sr-only">Delete forever</span>
@@ -337,9 +480,13 @@ function Trash() {
             <DialogTitle>Delete forever</DialogTitle>
             <DialogDescription>
               {purgeTarget?.kind === "folder"
-                ? `"${purgeTarget.folder.name}" and everything inside it will be permanently deleted. This cannot be undone.`
+                ? purgeTarget.folders.length === 1
+                  ? `"${purgeTarget.folders[0]!.name}" and everything inside it will be permanently deleted. This cannot be undone.`
+                  : `${purgeTarget.folders.length} folders — and everything inside each of them — will be permanently deleted. This cannot be undone.`
                 : purgeTarget?.kind === "file"
-                  ? `"${purgeTarget.file.name}" will be permanently deleted. This cannot be undone.`
+                  ? purgeTarget.files.length === 1
+                    ? `"${purgeTarget.files[0]!.name}" will be permanently deleted. This cannot be undone.`
+                    : `${purgeTarget.files.length} files will be permanently deleted. This cannot be undone.`
                   : null}
             </DialogDescription>
           </DialogHeader>
