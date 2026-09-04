@@ -424,6 +424,43 @@ export async function downloadFile(file: PortalFile) {
   window.open(url, "_blank", "noopener");
 }
 
+export interface BulkResult {
+  succeeded: number;
+  failed: PortalFile[];
+}
+
+/**
+ * Downloads several files one after another for the bulk file-list action.
+ * Deliberately does NOT reuse downloadFile's window.open — firing several
+ * window.open calls in a row gets the later ones silently blocked by the
+ * browser's pop-up blocker. A same-tab anchor click isn't treated as a
+ * pop-up (the server response already sets Content-Disposition: attachment,
+ * so it downloads instead of navigating away), and a short pause between
+ * files keeps the browser's download manager from racing them.
+ */
+export async function downloadFiles(files: PortalFile[]): Promise<BulkResult> {
+  const failed: PortalFile[] = [];
+  let succeeded = 0;
+  for (const file of files) {
+    try {
+      const { url } = await requestDownloadUrl({
+        data: { storagePath: file.storage_path, fileName: file.name, mode: "download" },
+      });
+      const link = document.createElement("a");
+      link.href = url;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      succeeded += 1;
+    } catch {
+      failed.push(file);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return { succeeded, failed };
+}
+
 /** Short-lived signed URL used to render a file inline in the preview modal. */
 export async function createPreviewUrl(file: PortalFile): Promise<string> {
   const { url } = await requestDownloadUrl({
@@ -439,6 +476,13 @@ export async function softDeleteFile(file: PortalFile, userId: string) {
     .update({ deleted_at: new Date().toISOString(), deleted_by: userId })
     .eq("id", file.id);
   if (error) throw error;
+}
+
+/** Moves several files to the recycle bin at once, for the bulk file-list action. */
+export async function softDeleteFiles(files: PortalFile[], userId: string): Promise<BulkResult> {
+  const results = await Promise.allSettled(files.map((file) => softDeleteFile(file, userId)));
+  const failed = files.filter((_, index) => results[index]?.status === "rejected");
+  return { succeeded: files.length - failed.length, failed };
 }
 
 /** Restores a file out of the recycle bin. */

@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -62,8 +63,10 @@ import {
   copyFileToFolder,
   createSubfolder,
   softDeleteFile,
+  softDeleteFiles,
   softDeleteFolder,
   downloadFile,
+  downloadFiles,
   fetchAllFolders,
   fetchFiles,
   fetchProfile,
@@ -136,6 +139,10 @@ function FolderBrowser() {
   // own default order — so nothing changes visually until a header is clicked.
   const [sortBy, setSortBy] = useState<FileSortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Files checked for the bulk download/delete bar. Keyed by id rather than
+  // the search-filtered list, so a selection survives typing into the
+  // per-folder search box.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: fetchProfile });
   const { data: allFolders, isLoading: folderLoading } = useQuery({
@@ -200,6 +207,7 @@ function FolderBrowser() {
     if (prevActiveFolderIdRef.current === activeFolder.id) return;
     prevActiveFolderIdRef.current = activeFolder.id;
     setFileQuery("");
+    setSelectedIds(new Set());
   }, [activeFolder?.id]);
 
   // Files belong to the active folder row itself — no client-side placement.
@@ -231,6 +239,31 @@ function FolderBrowser() {
           : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     return sortDir === "asc" ? cmp : -cmp;
   });
+
+  // Selection tracks ids so it survives re-sorting; "select all" only ever
+  // acts on the currently filtered/sorted rows the user can actually see.
+  const selectedFiles: PortalFile[] = visibleFiles.filter((file) => selectedIds.has(file.id));
+  const allSortedSelected =
+    sortedFiles.length > 0 && sortedFiles.every((file) => selectedIds.has(file.id));
+  const someSortedSelected = sortedFiles.some((file) => selectedIds.has(file.id));
+  const selectAllState: boolean | "indeterminate" = allSortedSelected
+    ? true
+    : someSortedSelected
+      ? "indeterminate"
+      : false;
+
+  function toggleFileSelected(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    setSelectedIds(checked ? new Set(sortedFiles.map((file) => file.id)) : new Set());
+  }
 
   const writable = canWrite(profile ?? null, activeFolder);
 
@@ -266,6 +299,40 @@ function FolderBrowser() {
       queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
     },
     onError: (error: Error) => toast.error(error.message || "Delete failed"),
+  });
+
+  const bulkDownload = useMutation({
+    mutationFn: (targets: PortalFile[]) => downloadFiles(targets),
+    onSuccess: (result) => {
+      if (result.failed.length === 0) {
+        toast.success(`Downloading ${result.succeeded} file${result.succeeded === 1 ? "" : "s"}`);
+      } else {
+        toast.error(
+          `Downloaded ${result.succeeded} of ${result.succeeded + result.failed.length} files — the rest failed`,
+        );
+      }
+    },
+    onError: () => toast.error("Bulk download failed"),
+  });
+
+  const bulkRemove = useMutation({
+    mutationFn: (targets: PortalFile[]) => {
+      if (!profile) throw new Error("Your session has expired — sign in again");
+      return softDeleteFiles(targets, profile.id);
+    },
+    onSuccess: (result, targets) => {
+      queryClient.invalidateQueries({ queryKey: ["files", activeFolder?.id] });
+      queryClient.invalidateQueries({ queryKey: ["folder-counts"] });
+      setSelectedIds(new Set());
+      if (result.failed.length === 0) {
+        toast.success(
+          `${result.succeeded} file${result.succeeded === 1 ? "" : "s"} moved to Recently Deleted`,
+        );
+      } else {
+        toast.error(`Deleted ${result.succeeded} of ${targets.length} files — the rest failed`);
+      }
+    },
+    onError: (error: Error) => toast.error(error.message || "Bulk delete failed"),
   });
 
   const clipboard = useClipboard();
@@ -692,6 +759,48 @@ function FolderBrowser() {
         </p>
       ) : (
         <>
+          {selectedFiles.length > 0 && (
+            <div className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+              <p className="text-sm font-medium">
+                {selectedFiles.length} file{selectedFiles.length === 1 ? "" : "s"} selected
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => bulkDownload.mutate(selectedFiles)}
+                  disabled={bulkDownload.isPending}
+                >
+                  {bulkDownload.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Download
+                </Button>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => bulkRemove.mutate(selectedFiles)}
+                    disabled={bulkRemove.isPending}
+                  >
+                    {bulkRemove.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4 text-destructive" />
+                    )}
+                    Delete
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                  <X className="h-4 w-4" />
+                  <span className="sr-only">Clear selection</span>
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="relative w-full max-w-xs">
               <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -725,9 +834,20 @@ function FolderBrowser() {
                     className={`glass-card flex cursor-pointer flex-col rounded-2xl p-4 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)] ${clipped ? "bg-accent/40" : ""}`}
                   >
                     <div className="flex items-start justify-between">
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
-                        <FileText className="h-5 w-5" />
-                      </span>
+                      <div
+                        className="flex items-center gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        <Checkbox
+                          checked={selectedIds.has(file.id)}
+                          onCheckedChange={(checked) => toggleFileSelected(file.id, !!checked)}
+                          aria-label={`Select ${file.name}`}
+                        />
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                          <FileText className="h-5 w-5" />
+                        </span>
+                      </div>
                       <FileRowMenu
                         canCut={writable}
                         onPreview={() => setPreviewFile(file)}
@@ -791,6 +911,13 @@ function FolderBrowser() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={selectAllState}
+                        onCheckedChange={(checked) => toggleSelectAll(!!checked)}
+                        aria-label="Select all files"
+                      />
+                    </TableHead>
                     <TableHead>
                       <SortHeaderButton
                         label="File name"
@@ -829,6 +956,16 @@ function FolderBrowser() {
                         onDoubleClick={() => setPreviewFile(file)}
                         className={`cursor-pointer ${clipped ? "bg-accent/40" : ""}`}
                       >
+                        <TableCell
+                          onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          <Checkbox
+                            checked={selectedIds.has(file.id)}
+                            onCheckedChange={(checked) => toggleFileSelected(file.id, !!checked)}
+                            aria-label={`Select ${file.name}`}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">
                           <span className="flex items-center gap-2">
                             <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
