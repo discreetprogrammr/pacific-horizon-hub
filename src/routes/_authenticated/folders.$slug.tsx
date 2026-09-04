@@ -74,8 +74,10 @@ import {
   formatBytes,
   formatDate,
   moveFilesToFolder,
+  nextAvailableName,
   pathOf,
   renameFolderRow,
+  replaceFile,
   uploadFile,
   type Folder,
   type PortalFile,
@@ -89,6 +91,18 @@ interface FolderBrowserSearch {
 }
 
 type FileSortKey = "name" | "size" | "date";
+
+/** One file to upload; `replaceTarget` set means overwrite that existing row instead of inserting a new one. */
+interface UploadJob {
+  file: File;
+  replaceTarget?: PortalFile;
+}
+
+/** Files picked or dropped whose name collides with one already in the folder, awaiting a conflict-resolution choice. */
+interface UploadConflict {
+  files: File[];
+  conflictNamesLower: Set<string>;
+}
 
 export const Route = createFileRoute("/_authenticated/folders/$slug")({
   // Both optional and both left out entirely on a plain navigation, so
@@ -126,6 +140,10 @@ function FolderBrowser() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  // Set only when a drop/pick includes a name that collides with a file
+  // already in this folder — holds the whole batch until Replace / Keep
+  // Both / Skip is chosen, so files with no conflict never wait on it.
+  const [pendingConflict, setPendingConflict] = useState<UploadConflict | null>(null);
   // Seeded from the `open` search param when arriving via the portal search
   // box (see portal-search.tsx); plain navigation here leaves it undefined
   // and this behaves exactly as before.
@@ -287,13 +305,17 @@ function FolderBrowser() {
   const isAdmin = profile?.role === "super_admin";
 
   const upload = useMutation({
-    mutationFn: async (fileList: File[]) => {
+    mutationFn: async (jobs: UploadJob[]) => {
       // Uploads target the exact folder row the user is standing in.
       const destination = activeFolder;
       if (!destination) throw new Error("Destination folder unavailable");
-      for (const file of fileList) {
+      for (const job of jobs) {
         setProgress(5);
-        await uploadFile(destination, file, profile!.id, setProgress);
+        if (job.replaceTarget) {
+          await replaceFile(job.replaceTarget, destination, job.file, profile!.id, setProgress);
+        } else {
+          await uploadFile(destination, job.file, profile!.id, setProgress);
+        }
       }
     },
     onSuccess: () => {
@@ -304,6 +326,72 @@ function FolderBrowser() {
     onError: (error: Error) => toast.error(error.message || "Upload failed"),
     onSettled: () => setTimeout(() => setProgress(null), 600),
   });
+
+  // Entry point for both drag-drop and the file picker: files with no name
+  // collision upload immediately exactly as before; anything colliding with
+  // a file already in this folder holds the whole batch for a Replace /
+  // Keep Both / Skip choice rather than silently creating a second file
+  // with the same name.
+  function startUpload(files: File[]) {
+    if (files.length === 0) return;
+    const existingNamesLower = new Set(visibleFiles.map((f) => f.name.toLowerCase()));
+    const conflictNamesLower = new Set(
+      files
+        .filter((f) => existingNamesLower.has(f.name.toLowerCase()))
+        .map((f) => f.name.toLowerCase()),
+    );
+    if (conflictNamesLower.size === 0) {
+      upload.mutate(files.map((file) => ({ file })));
+      return;
+    }
+    setPendingConflict({ files, conflictNamesLower });
+  }
+
+  function resolveConflictReplace() {
+    if (!pendingConflict) return;
+    const jobs: UploadJob[] = pendingConflict.files.map((file) => {
+      const match = visibleFiles.find((f) => f.name.toLowerCase() === file.name.toLowerCase());
+      return match ? { file, replaceTarget: match } : { file };
+    });
+    upload.mutate(jobs);
+    setPendingConflict(null);
+  }
+
+  function resolveConflictKeepBoth() {
+    if (!pendingConflict) return;
+    const takenLower = new Set(visibleFiles.map((f) => f.name.toLowerCase()));
+    const jobs: UploadJob[] = pendingConflict.files.map((file) => {
+      if (!takenLower.has(file.name.toLowerCase())) return { file };
+      const renamed = nextAvailableName(file.name, takenLower);
+      takenLower.add(renamed.toLowerCase()); // reserve it in case the same batch has more than one of this name
+      return { file: new File([file], renamed, { type: file.type }) };
+    });
+    upload.mutate(jobs);
+    setPendingConflict(null);
+  }
+
+  function resolveConflictSkip() {
+    if (!pendingConflict) return;
+    const remaining = pendingConflict.files.filter(
+      (file) => !pendingConflict.conflictNamesLower.has(file.name.toLowerCase()),
+    );
+    if (remaining.length > 0) {
+      upload.mutate(remaining.map((file) => ({ file })));
+    }
+    setPendingConflict(null);
+  }
+
+  // De-duplicated, original-cased names for the conflict dialog — the same
+  // name can appear twice if the picked/dropped batch itself has a repeat.
+  const conflictDisplayNames = pendingConflict
+    ? Array.from(
+        new Map(
+          pendingConflict.files
+            .filter((file) => pendingConflict.conflictNamesLower.has(file.name.toLowerCase()))
+            .map((file) => [file.name.toLowerCase(), file.name]),
+        ).values(),
+      )
+    : [];
 
   const remove = useMutation({
     mutationFn: (file: PortalFile) => {
@@ -617,7 +705,7 @@ function FolderBrowser() {
             e.preventDefault();
             setDragging(false);
             const dropped = Array.from(e.dataTransfer.files);
-            if (dropped.length) upload.mutate(dropped);
+            startUpload(dropped);
           }}
           className={`glass-card rounded-2xl border-2 border-dashed p-8 text-center transition-colors ${
             dragging ? "border-primary bg-accent/40" : "border-border"
@@ -635,7 +723,7 @@ function FolderBrowser() {
             className="hidden"
             onChange={(e) => {
               const picked = Array.from(e.target.files ?? []);
-              if (picked.length) upload.mutate(picked);
+              startUpload(picked);
               e.target.value = "";
             }}
           />
@@ -1080,6 +1168,41 @@ function FolderBrowser() {
           )}
         </>
       )}
+
+      <Dialog open={!!pendingConflict} onOpenChange={(open) => !open && setPendingConflict(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {conflictDisplayNames.length === 1
+                ? "File already exists"
+                : "Some files already exist"}
+            </DialogTitle>
+            <DialogDescription>
+              {conflictDisplayNames.length === 1
+                ? `"${conflictDisplayNames[0]}" is already in this folder.`
+                : `${conflictDisplayNames.length} file names are already in this folder: ${conflictDisplayNames.join(", ")}.`}{" "}
+              Replace the existing file, keep both, or skip uploading just these — anything else in
+              this batch uploads either way.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-wrap gap-2 sm:justify-between">
+            <Button variant="outline" onClick={() => setPendingConflict(null)}>
+              Cancel
+            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={resolveConflictSkip}>
+                Skip
+              </Button>
+              <Button variant="outline" onClick={resolveConflictKeepBoth}>
+                Keep Both
+              </Button>
+              <Button variant="destructive" onClick={resolveConflictReplace}>
+                Replace
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <FilePreviewDialog
         file={previewFile}

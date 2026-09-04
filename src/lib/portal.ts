@@ -417,6 +417,87 @@ export async function uploadFile(
   return inserted?.id ?? null;
 }
 
+/**
+ * Replaces an existing file's content in place — same row/id, new storage
+ * object — for the "Replace" choice in the upload name-conflict dialog.
+ * Uploads to a fresh storage path first and only swaps the row over once
+ * that succeeds, so a failed upload never touches the original; the old
+ * object is removed only after the row points at the new one.
+ */
+export async function replaceFile(
+  existing: PortalFile,
+  folder: Folder,
+  file: File,
+  userId: string,
+  onProgress?: (pct: number) => void,
+) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new Error(
+      `"${file.name}" is ${formatBytes(file.size)} — the maximum upload size is ${MAX_UPLOAD_LABEL}.`,
+    );
+  }
+
+  onProgress?.(5);
+  const { uploadUrl, storagePath } = await requestUploadUrl({
+    data: {
+      folderSlug: folder.slug,
+      fileName: file.name,
+      contentType: file.type || "application/octet-stream",
+      fileSize: file.size,
+    },
+  });
+
+  await putWithProgress(uploadUrl, file, onProgress);
+
+  onProgress?.(90);
+  const oldStoragePath = existing.storage_path;
+  const { error: updateError } = await supabase
+    .from("files")
+    .update({
+      name: file.name,
+      size: file.size,
+      mime_type: file.type || null,
+      storage_path: storagePath,
+      uploaded_by: userId,
+      created_at: new Date().toISOString(),
+    })
+    .eq("id", existing.id);
+  if (updateError) {
+    // The new object is already written but the row swap failed — clean it
+    // up so it doesn't linger with no file row behind it. The original file
+    // and its object are untouched.
+    await deleteObject({ data: { storagePath } }).catch(() => {});
+    throw updateError;
+  }
+
+  await deleteObject({ data: { storagePath: oldStoragePath } }).catch(() => {
+    // best-effort cleanup; the row already points at the new object, so a
+    // stray old one is harmless
+  });
+  onProgress?.(100);
+}
+
+/**
+ * Finds the next "name (1).ext", "name (2).ext", ... that isn't already
+ * taken, for the "Keep Both" choice in the upload name-conflict dialog.
+ * `existingNamesLower` must already be lower-cased, matching how names are
+ * compared for conflicts elsewhere.
+ */
+export function nextAvailableName(name: string, existingNamesLower: Set<string>): string {
+  if (!existingNamesLower.has(name.toLowerCase())) return name;
+  const dotIndex = name.lastIndexOf(".");
+  const hasExt = dotIndex > 0 && dotIndex < name.length - 1;
+  const base = hasExt ? name.slice(0, dotIndex) : name;
+  const ext = hasExt ? name.slice(dotIndex) : "";
+  let counter = 1;
+  let candidate = `${base} (${counter})${ext}`;
+  while (existingNamesLower.has(candidate.toLowerCase())) {
+    counter += 1;
+    candidate = `${base} (${counter})${ext}`;
+  }
+  return candidate;
+}
+
 export async function downloadFile(file: PortalFile) {
   const { url } = await requestDownloadUrl({
     data: { storagePath: file.storage_path, fileName: file.name, mode: "download" },
