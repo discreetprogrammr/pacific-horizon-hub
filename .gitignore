@@ -20,6 +20,15 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Vercel CLI
+.vercel
+
+# Supabase CLI
+supabase/.temp
+
+# Stray lockfile from npm/npx runs -- this project uses bun.lock
+package-lock.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
