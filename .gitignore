@@ -8,6 +8,11 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+
+# env files - ignore every variant, keep only the committed template
+.env
+.env.*
+!.env*.example
 dist
 dist-ssr
 .output
